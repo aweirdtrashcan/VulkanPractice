@@ -11,3 +11,10 @@ struct VkPhysicalDeviceInfo
 	VkPhysicalDeviceFeatures features;
 	std::vector<VkQueueFamilyProperties> queueFamilyProperties;
 };
+
+struct VkDeviceInfo
+{
+	VkDevice device;
+	uint32_t graphicsQueueIndex;
+	uint32_t transferQueueIndex;
+};

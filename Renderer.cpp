@@ -11,6 +11,7 @@ VkBool32 __stdcall vkDebugUtilsMessengerCallback (
 	const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 	void* pUserData) {
 	std::cout << pCallbackData->pMessage << "\n";
+	OutputDebugStringA(pCallbackData->pMessage);
 	return VK_FALSE;
 }
 
@@ -21,11 +22,23 @@ Renderer::Renderer(Window* window)
 	mInstance = CreateVulkanInstance();
 	mDebugMessenger = CreateVulkanMessenger();
 	mPhysicalDevice = ChoosePhysicalDevice();
-	mDevice = CreateLogicalDevice();
+	VkDeviceInfo deviceInfo = CreateLogicalDevice();
+	mDevice = deviceInfo.device;
+	vkGetDeviceQueue(mDevice, deviceInfo.graphicsQueueIndex, 0, &mGraphicsQueue);
+	vkGetDeviceQueue(mDevice, deviceInfo.transferQueueIndex, 0, &mTransferQueue);
+	mMainCmdPool = CreateCommandPool(deviceInfo.graphicsQueueIndex);
+	mMainCmd = AllocateCommandBuffer(mMainCmdPool);
+	mMainTransferCmdPool = CreateCommandPool(deviceInfo.transferQueueIndex);
+	mMainTransferCmd = AllocateCommandBuffer(mMainTransferCmdPool);
 }
 
 Renderer::~Renderer()
 {
+	if (mMainCmd) vkFreeCommandBuffers(mDevice, mMainCmdPool, 1u, &mMainCmd);
+	if (mMainCmdPool) vkDestroyCommandPool(mDevice, mMainCmdPool, nullptr);
+	if (mMainTransferCmd) vkFreeCommandBuffers(mDevice, mMainTransferCmdPool, 1u, &mMainTransferCmd);
+	if (mMainTransferCmdPool) vkDestroyCommandPool(mDevice, mMainTransferCmdPool, nullptr);
+	if (mDevice) vkDestroyDevice(mDevice, nullptr);
 	{
 		/* DebugUtilsMessenger */
 		PFN_vkDestroyDebugUtilsMessengerEXT func = (PFN_vkDestroyDebugUtilsMessengerEXT)
@@ -229,9 +242,9 @@ VkPhysicalDeviceInfo Renderer::ChoosePhysicalDevice() const
 	return physicalDeviceInfo;
 }
 
-VkDevice Renderer::CreateLogicalDevice() const
+VkDeviceInfo Renderer::CreateLogicalDevice() const
 {
-	VkDevice device = nullptr;
+	VkDeviceInfo deviceInfo;
 	uint32_t supportedExtensionsCount = 0;
 
 	VK_CHECK(vkEnumerateDeviceExtensionProperties(
@@ -346,8 +359,46 @@ VkDevice Renderer::CreateLogicalDevice() const
 
 	createInfo.queueCreateInfoCount = std::size(queueCreateInfo);
 	createInfo.pQueueCreateInfos = queueCreateInfo;
-	
-	VK_CHECK(vkCreateDevice(mPhysicalDevice.physicalDevice, &createInfo, nullptr, &device));
 
-	return device;
+	VK_CHECK(vkCreateDevice(mPhysicalDevice.physicalDevice, &createInfo, nullptr, &deviceInfo.device));
+
+	deviceInfo.graphicsQueueIndex = graphicsQueueIndex;
+	deviceInfo.transferQueueIndex = transferQueueIndex;
+
+	return deviceInfo;
+}
+
+VkCommandPool Renderer::CreateCommandPool(uint32_t queueFamilyIndex) const
+{
+	VkCommandPool commandPool = 0;
+	VkCommandPoolCreateInfo createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	createInfo.queueFamilyIndex = queueFamilyIndex;
+	createInfo.flags = 0;
+	createInfo.pNext = nullptr;
+
+	VK_CHECK(vkCreateCommandPool(mDevice, &createInfo, nullptr, &commandPool));
+
+	return commandPool;
+}
+
+VkCommandBuffer Renderer::AllocateCommandBuffer(VkCommandPool commandPool) const
+{
+	VkCommandBuffer commandBuffer = nullptr;
+	VkCommandBufferAllocateInfo allocInfo;
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandBufferCount = 1;
+	allocInfo.commandPool = commandPool;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.pNext = nullptr;
+
+	VK_CHECK(vkAllocateCommandBuffers(mDevice, &allocInfo, &commandBuffer));
+
+	return commandBuffer;
+}
+
+VkSwapchainKHR Renderer::CreateSwapchain() const
+{
+	VkSwapchainCreateInfoKHR createInfo = {};
+	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 }

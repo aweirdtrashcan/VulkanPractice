@@ -22,7 +22,10 @@ private:
 	VkInstance CreateVulkanInstance() const;
 	VkDebugUtilsMessengerEXT CreateVulkanMessenger() const;
 	VkPhysicalDeviceInfo ChoosePhysicalDevice() const;
-	VkDevice CreateLogicalDevice() const;
+	VkDeviceInfo CreateLogicalDevice() const;
+	VkCommandPool CreateCommandPool(uint32_t queueFamilyIndex) const;
+	VkCommandBuffer AllocateCommandBuffer(VkCommandPool commandPool) const;
+	VkSwapchainKHR CreateSwapchain() const;
 
 private:
 	Window* mWindow;
@@ -30,5 +33,12 @@ private:
 	VkDebugUtilsMessengerEXT mDebugMessenger = 0;
 	VkPhysicalDeviceInfo mPhysicalDevice = {};
 	VkDevice mDevice = nullptr;
+	VkQueue mGraphicsQueue = nullptr;
+	VkQueue mTransferQueue = nullptr;
+	VkCommandBuffer mMainCmd = nullptr;
+	VkCommandPool mMainCmdPool = 0;
+	VkCommandBuffer mMainTransferCmd = nullptr;
+	VkCommandPool mMainTransferCmdPool = 0;
+	VkSwapchainKHR mSwapchain = 0;
 };
 

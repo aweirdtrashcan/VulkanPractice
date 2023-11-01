@@ -2,7 +2,7 @@
 
 #include <exception>
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
+int main(void)
 {
 	bool shouldLeave = false;
 	int returnCode = 0;
@@ -20,6 +20,5 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 	{
 		MessageBoxA(nullptr, e.what(), "Error", MB_OK | MB_ICONEXCLAMATION);
 	}
-
 	return returnCode;
 }
