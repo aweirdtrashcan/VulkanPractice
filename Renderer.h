@@ -11,7 +11,7 @@ class Window;
 class Renderer
 {
 public:
-	Renderer(Window* window);
+	Renderer(const Window* window);
 	~Renderer();
 	
 	void StopRender() {};
@@ -25,20 +25,48 @@ private:
 	VkDeviceInfo CreateLogicalDevice() const;
 	VkCommandPool CreateCommandPool(uint32_t queueFamilyIndex) const;
 	VkCommandBuffer AllocateCommandBuffer(VkCommandPool commandPool) const;
-	VkSwapchainKHR CreateSwapchain() const;
+	VkSurfaceKHR CreateVulkanSurface() const;
+	VkSwapchainKHR CreateSwapchain(VkSurfaceFormatKHR& out_swapchainSurfaceFormat) const;
+	uint32_t GetSwapchainImagesCount() const;
+	std::vector<VkImage> GetSwapchainImages(uint32_t imageCount) const;
+	VkImageView CreateImageView(VkFormat viewFormat, VkImage image, VkImageAspectFlags imageAspect) const;
+	VkShaderModule CreateShaderModule(const char* shaderPath) const;
+	VkRenderPass CreateRenderPass() const;
+	VkPipelineLayout CreatePipelineLayout() const;
+	VkPipeline CreateVulkanPipeline() const;
 
 private:
-	Window* mWindow;
+	static constexpr int shaderCodeMaxSize = 1024 * 10;
+
+	const Window* mWindow;
 	VkInstance mInstance = nullptr;
-	VkDebugUtilsMessengerEXT mDebugMessenger = 0;
+	VkDebugUtilsMessengerEXT mDebugMessenger = nullptr;
+	
 	VkPhysicalDeviceInfo mPhysicalDevice = {};
 	VkDevice mDevice = nullptr;
+	
 	VkQueue mGraphicsQueue = nullptr;
 	VkQueue mTransferQueue = nullptr;
+	
 	VkCommandBuffer mMainCmd = nullptr;
-	VkCommandPool mMainCmdPool = 0;
+	VkCommandPool mMainCmdPool = nullptr;
 	VkCommandBuffer mMainTransferCmd = nullptr;
-	VkCommandPool mMainTransferCmdPool = 0;
-	VkSwapchainKHR mSwapchain = 0;
+	VkCommandPool mMainTransferCmdPool = nullptr;
+	
+	VkSurfaceKHR mSurface = nullptr;
+	VkSwapchainKHR mSwapchain = nullptr;
+	VkSurfaceFormatKHR mSwapchainSurfaceFormat = {};
+
+	std::vector<VkImage> mImages;
+	std::vector<VkImageView> mImageViews;
+	uint32_t mImageCount = 0;
+
+	VkRenderPass mRenderpass = nullptr;
+
+	VkViewport mViewport = {};
+	VkRect2D mScissor = {};
+
+	VkPipelineLayout mPipelineLayout = nullptr;
+	VkPipeline mGraphicsPipeline = nullptr;
 };
 

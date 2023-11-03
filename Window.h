@@ -5,7 +5,6 @@
 
 class Window
 {
-	friend class Renderer;
 public:
 	Window(const wchar_t* name, int width, int height);
 	~Window();
@@ -13,6 +12,7 @@ public:
 	int ProcessMessages(bool& shouldLeave);
 
 	_NODISCARD HWND GetHandleToWindow() const { return mHwnd; }
+	_NODISCARD HINSTANCE GetWindowInstance() const { return mInstance; }
 	_NODISCARD int GetWindowWidth() const { return mWidth; }
 	_NODISCARD int GetWindowHeight() const { return mHeight; }
 	_NODISCARD inline double GetDeltaTime()
