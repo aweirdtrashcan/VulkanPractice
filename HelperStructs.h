@@ -26,6 +26,13 @@ struct VertexBufferModel
 	glm::vec4 color;
 };
 
+struct Buffer
+{
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	uint32_t size;
+};
+
 struct FrameResources
 {
 

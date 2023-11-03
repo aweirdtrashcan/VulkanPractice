@@ -7,6 +7,11 @@
 #include <vector>
 #include <iostream>
 
+// stupid windows macro
+#ifdef CreateSemaphore
+#undef CreateSemaphore
+#endif
+
 // statically allocated buffer for log writing
 #define MSG_BUF_SIZE (2048)
 
@@ -68,10 +73,27 @@ Renderer::Renderer(const Window* window)
 	mRenderpass = CreateRenderPass();
 	mPipelineLayout = CreatePipelineLayout();
 	mGraphicsPipeline = CreateVulkanPipeline();
+
+	VertexBufferModel vertexBuffer[3] =
+	{
+		{ {  0.0f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ {  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		{ { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+	};
+
+	mVertCount = static_cast<uint32_t>(std::size(vertexBuffer));
+
+	mVertexBuffer = CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(vertexBuffer), false);
+	BindBuffer(mVertexBuffer);
+	Buffer upBuf = CreateUploadBuffer(sizeof(vertexBuffer));
+	BindBuffer(upBuf);
+	UploadToBuffer(mVertexBuffer, upBuf, vertexBuffer, upBuf.size);
+	DestroyBuffer(&upBuf);
 }
 
 Renderer::~Renderer()
 {
+	DestroyBuffer(&mVertexBuffer);
 	vkDestroyRenderPass(mDevice, mRenderpass, nullptr);
 	vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
 	vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
@@ -91,6 +113,19 @@ Renderer::~Renderer()
 #endif
 	vkDestroyInstance(mInstance, nullptr);
 	free(msgBuf);
+}
+
+void Renderer::Update()
+{
+}
+
+void Renderer::Draw()
+{
+	VK_CHECK(vkAcquireNextImageKHR(
+		mDevice,
+		mSwapchain,
+		UINT64_MAX,
+		));
 }
 
 VkInstance Renderer::CreateVulkanInstance() const
@@ -420,7 +455,7 @@ VkCommandPool Renderer::CreateCommandPool(uint32_t queueFamilyIndex) const
 	VkCommandPoolCreateInfo createInfo = {};
 	createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	createInfo.queueFamilyIndex = queueFamilyIndex;
-	createInfo.flags = 0;
+	createInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 	createInfo.pNext = nullptr;
 
 	VK_CHECK(vkCreateCommandPool(mDevice, &createInfo, nullptr, &commandPool));
@@ -973,4 +1008,228 @@ VkPipeline Renderer::CreateVulkanPipeline() const
 	vkDestroyShaderModule(mDevice, fragShader, nullptr);
 
 	return pipeline;
+}
+
+VkFence Renderer::CreateVulkanFence() const
+{
+	VkFence fence = nullptr;
+	VkFenceCreateInfo createInfo;
+	createInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	VK_CHECK(vkCreateFence(
+		mDevice,
+		&createInfo,
+		nullptr,
+		&fence
+	));
+
+	return fence;
+}
+
+VkSemaphore Renderer::CreateSemaphore() const
+{
+	VkSemaphore semaphore = nullptr;
+	VkSemaphoreCreateInfo createInfo;
+	createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = VK_SEMAPHORE_TYPE_BINARY;
+	VK_CHECK(vkCreateSemaphore(
+		mDevice,
+		&createInfo,
+		nullptr,
+		&semaphore
+	));
+
+	return semaphore;
+}
+
+int32_t Renderer::FindMemoryIndex(uint32_t memoryTypeBits, VkMemoryPropertyFlags requestedMemoryType) const
+{
+	for (uint32_t i = 0; i < mPhysicalDevice.memoryProperties.memoryTypeCount; i++)
+	{
+		if (
+			memoryTypeBits & (1 << i) &&
+			(mPhysicalDevice.memoryProperties.memoryTypes[i].propertyFlags & requestedMemoryType) == requestedMemoryType
+			)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+Buffer Renderer::CreateBuffer(VkBufferUsageFlags bufferUsage, VkDeviceSize bufferSize, bool cpuAccessible) const
+{
+	Buffer buffer;
+	VkBufferCreateInfo createInfo;
+	createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = 0;
+	createInfo.size = bufferSize;
+	createInfo.usage = bufferUsage;
+	createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;	// TODO: Only using with one queue.
+	// queue families can be null if buffer sharingMode = VK_SHARING_MODE_EXCLUSE.
+	createInfo.queueFamilyIndexCount = 0;
+	createInfo.pQueueFamilyIndices = nullptr;
+
+	VK_CHECK(vkCreateBuffer(
+		mDevice,
+		&createInfo,
+		nullptr,
+		&buffer.buffer
+	));
+
+	VkMemoryRequirements memoryRequirements;
+	vkGetBufferMemoryRequirements(mDevice, buffer.buffer, &memoryRequirements);
+	buffer.size = memoryRequirements.size;
+
+	VkMemoryPropertyFlagBits memoryFlagBit = cpuAccessible ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT :
+															 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+
+	int32_t memIndex = FindMemoryIndex(memoryRequirements.memoryTypeBits, memoryFlagBit);
+
+	VkMemoryAllocateInfo allocateInfo;
+	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocateInfo.pNext = nullptr;
+	allocateInfo.allocationSize = memoryRequirements.size;
+	allocateInfo.memoryTypeIndex = memIndex;
+
+	VK_CHECK(vkAllocateMemory(
+		mDevice,
+		&allocateInfo,
+		nullptr,
+		&buffer.memory
+	));
+
+	return buffer;
+}
+
+Buffer Renderer::CreateUploadBuffer(VkDeviceSize bufferSize) const
+{
+	Buffer buffer;
+	VkBufferCreateInfo createInfo;
+	createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = 0;
+	createInfo.size = bufferSize;
+	createInfo.usage = VK_BUFFER_USAGE_2_TRANSFER_SRC_BIT_KHR;
+	createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;	// TODO: Only using with one queue.
+	// queue families can be null if buffer sharingMode = VK_SHARING_MODE_EXCLUSE.
+	createInfo.queueFamilyIndexCount = 0;
+	createInfo.pQueueFamilyIndices = nullptr;
+
+	VK_CHECK(vkCreateBuffer(
+		mDevice,
+		&createInfo,
+		nullptr,
+		&buffer.buffer
+	));
+
+	VkMemoryRequirements memoryRequirements;
+	vkGetBufferMemoryRequirements(mDevice, buffer.buffer, &memoryRequirements);
+	buffer.size = memoryRequirements.size;
+
+	VkMemoryPropertyFlagBits memoryFlagBit = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+
+	int32_t memIndex = FindMemoryIndex(memoryRequirements.memoryTypeBits, memoryFlagBit);
+
+	VkMemoryAllocateInfo allocateInfo;
+	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocateInfo.pNext = nullptr;
+	allocateInfo.allocationSize = memoryRequirements.size;
+	allocateInfo.memoryTypeIndex = memIndex;
+
+	VK_CHECK(vkAllocateMemory(
+		mDevice,
+		&allocateInfo,
+		nullptr,
+		&buffer.memory
+	));
+
+	return buffer;
+}
+
+void Renderer::UploadToBuffer(Buffer& destinationBuffer, Buffer& uploadBuffer, const void* data, VkDeviceSize bufferSize)
+{
+	VK_CHECK(vkDeviceWaitIdle(mDevice));
+	void* mappedData = nullptr;
+	VK_CHECK(vkMapMemory(
+		mDevice,
+		uploadBuffer.memory,
+		0,
+		bufferSize,
+		0,
+		&mappedData
+	));
+
+	memcpy(mappedData, data, static_cast<size_t>(bufferSize));
+
+	VkBufferCopy bufferCopy;
+	bufferCopy.srcOffset = 0;
+	bufferCopy.dstOffset = 0;
+	bufferCopy.size = bufferSize;
+
+	//VkMemoryBarrier uploadMemoryBarrier;
+	//uploadMemoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	//uploadMemoryBarrier.pNext = nullptr;
+	//uploadMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+	//uploadMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+	VK_CHECK(vkResetCommandPool(
+		mDevice,
+		mMainTransferCmdPool,
+		0
+	));
+
+	VK_CHECK(vkResetCommandBuffer(
+		mMainTransferCmd,
+		0
+	));
+
+	VkCommandBufferBeginInfo beginInfo;
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.pNext = nullptr;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	beginInfo.pInheritanceInfo = nullptr;
+
+	VK_CHECK(vkBeginCommandBuffer(mMainTransferCmd, &beginInfo));
+
+	vkCmdCopyBuffer(mMainTransferCmd, uploadBuffer.buffer, destinationBuffer.buffer, 1, &bufferCopy);
+	
+	VK_CHECK(vkEndCommandBuffer(mMainTransferCmd));
+
+	VkSubmitInfo submitInfo;
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.pNext = nullptr;
+	submitInfo.waitSemaphoreCount = 0;
+	submitInfo.pWaitSemaphores = nullptr;
+	submitInfo.signalSemaphoreCount = 0;
+	submitInfo.pSignalSemaphores = nullptr;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &mMainTransferCmd;
+	submitInfo.pWaitDstStageMask = nullptr;
+
+	VK_CHECK(vkQueueSubmit(mTransferQueue, 1u, &submitInfo, nullptr));
+
+	VK_CHECK(vkDeviceWaitIdle(mDevice));
+
+	vkUnmapMemory(mDevice, uploadBuffer.memory);
+}
+
+void Renderer::BindBuffer(const Buffer& buffer, VkDeviceSize offset) const
+{
+	VK_CHECK(vkBindBufferMemory(
+		mDevice,
+		buffer.buffer,
+		buffer.memory,
+		offset
+	));
+}
+
+void Renderer::DestroyBuffer(Buffer* buffer) const
+{
+	vkFreeMemory(mDevice, buffer->memory, nullptr);
+	vkDestroyBuffer(mDevice, buffer->buffer, nullptr);
 }

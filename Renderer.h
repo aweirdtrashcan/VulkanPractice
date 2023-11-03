@@ -18,6 +18,9 @@ public:
 	void NotifyWindowResize() {};
 	void ToggleVSync() {};
 
+	void Update();
+	void Draw();
+
 private:
 	VkInstance CreateVulkanInstance() const;
 	VkDebugUtilsMessengerEXT CreateVulkanMessenger() const;
@@ -34,6 +37,15 @@ private:
 	VkRenderPass CreateRenderPass() const;
 	VkPipelineLayout CreatePipelineLayout() const;
 	VkPipeline CreateVulkanPipeline() const;
+	VkFence CreateVulkanFence() const;
+	VkSemaphore CreateSemaphore() const;
+	int32_t FindMemoryIndex(uint32_t memoryTypeBits, VkMemoryPropertyFlags requestedMemoryType) const;
+	Buffer CreateBuffer(VkBufferUsageFlags bufferUsage, VkDeviceSize bufferSize, bool cpuAccessible) const;
+	Buffer CreateUploadBuffer(VkDeviceSize bufferSize) const;
+	void UploadToBuffer(Buffer& destinationBuffer, Buffer& uploadBuffer, const void* data, VkDeviceSize bufferSize);
+	void BindBuffer(const Buffer& buffer, VkDeviceSize offset) const;
+	inline void BindBuffer(const Buffer& buffer) const { BindBuffer(buffer, 0); }
+	void DestroyBuffer(Buffer* buffer) const;
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
@@ -53,6 +65,9 @@ private:
 	VkCommandBuffer mMainTransferCmd = nullptr;
 	VkCommandPool mMainTransferCmdPool = nullptr;
 	
+	VkFence mMainCopyFence = nullptr;
+	VkSemaphore mMainCopyDoneSemaphore = nullptr;
+
 	VkSurfaceKHR mSurface = nullptr;
 	VkSwapchainKHR mSwapchain = nullptr;
 	VkSurfaceFormatKHR mSwapchainSurfaceFormat = {};
@@ -65,6 +80,11 @@ private:
 
 	VkViewport mViewport = {};
 	VkRect2D mScissor = {};
+
+	Buffer mVertexBuffer;
+	Buffer mIndexBuffer;
+
+	uint32_t mVertCount = 0;
 
 	VkPipelineLayout mPipelineLayout = nullptr;
 	VkPipeline mGraphicsPipeline = nullptr;
