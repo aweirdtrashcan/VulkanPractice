@@ -79,6 +79,7 @@ private:
 
 	std::vector<VkImage> mImages;
 	std::vector<VkImageView> mImageViews;
+	std::vector<bool> mIsImageFirstTime;
 	uint32_t mImageCount = 0;
 
 	std::vector<FrameResources> mFrameResources;
