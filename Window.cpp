@@ -76,6 +76,12 @@ int Window::ProcessMessages(bool& shouldLeave)
 	return static_cast<int>(msg.wParam);
 }
 
+void Window::Render()
+{
+	mRenderer->Update();
+	mRenderer->Draw();
+}
+
 LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)

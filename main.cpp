@@ -14,6 +14,7 @@ int main(void)
 		while (!shouldLeave)
 		{
 			returnCode = window.ProcessMessages(shouldLeave);
+			window.Render();
 		}
 	}
 	catch (const std::exception& e)
