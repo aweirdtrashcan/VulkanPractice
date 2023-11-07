@@ -35,5 +35,11 @@ struct Buffer
 
 struct FrameResources
 {
-
+	VkSemaphore ImageAcquired;
+	VkSemaphore ImagePresented;
+	VkFence Fence;
+	
+	VkCommandBuffer CommandBuffer;
+	VkCommandPool CommandPool;
+	VkFramebuffer Framebuffer;
 };

@@ -35,6 +35,7 @@ private:
 	VkImageView CreateImageView(VkFormat viewFormat, VkImage image, VkImageAspectFlags imageAspect) const;
 	VkShaderModule CreateShaderModule(const char* shaderPath) const;
 	VkRenderPass CreateRenderPass() const;
+	VkFramebuffer CreateFramebuffer(VkRenderPass renderpass, uint32_t numImageViews, VkImageView* imageViews, uint32_t width, uint32_t height) const;
 	VkPipelineLayout CreatePipelineLayout() const;
 	VkPipeline CreateVulkanPipeline() const;
 	VkFence CreateVulkanFence() const;
@@ -56,6 +57,7 @@ private:
 	
 	VkPhysicalDeviceInfo mPhysicalDevice = {};
 	VkDevice mDevice = nullptr;
+	uint32_t mGraphicsQueueIndex = 0;
 	
 	VkQueue mGraphicsQueue = nullptr;
 	VkQueue mTransferQueue = nullptr;
@@ -68,6 +70,8 @@ private:
 	VkFence mMainCopyFence = nullptr;
 	VkSemaphore mMainCopyDoneSemaphore = nullptr;
 
+	uint32_t mImageIndex = 0;
+
 	VkSurfaceKHR mSurface = nullptr;
 	VkSwapchainKHR mSwapchain = nullptr;
 	VkSurfaceFormatKHR mSwapchainSurfaceFormat = {};
@@ -75,6 +79,8 @@ private:
 	std::vector<VkImage> mImages;
 	std::vector<VkImageView> mImageViews;
 	uint32_t mImageCount = 0;
+
+	std::vector<FrameResources> mFrameResources;
 
 	VkRenderPass mRenderpass = nullptr;
 
@@ -84,7 +90,7 @@ private:
 	Buffer mVertexBuffer;
 	Buffer mIndexBuffer;
 
-	uint32_t mVertCount = 0;
+	uint32_t mIndexCount = 0;
 
 	VkPipelineLayout mPipelineLayout = nullptr;
 	VkPipeline mGraphicsPipeline = nullptr;

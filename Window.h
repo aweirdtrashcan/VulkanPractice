@@ -15,6 +15,7 @@ public:
 	_NODISCARD HINSTANCE GetWindowInstance() const { return mInstance; }
 	_NODISCARD int GetWindowWidth() const { return mWidth; }
 	_NODISCARD int GetWindowHeight() const { return mHeight; }
+	void Render();
 	_NODISCARD inline double GetDeltaTime()
 	{
 		QueryPerformanceCounter((LARGE_INTEGER*)&mCurrentTime);

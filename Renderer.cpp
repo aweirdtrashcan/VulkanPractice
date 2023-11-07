@@ -39,6 +39,7 @@ Renderer::Renderer(const Window* window)
 	mPhysicalDevice = ChoosePhysicalDevice();
 	VkDeviceInfo deviceInfo = CreateLogicalDevice();
 	mDevice = deviceInfo.device;
+	mGraphicsQueueIndex = deviceInfo.graphicsQueueIndex;
 	vkGetDeviceQueue(mDevice, deviceInfo.graphicsQueueIndex, 0, &mGraphicsQueue);
 	vkGetDeviceQueue(mDevice, deviceInfo.transferQueueIndex, 0, &mTransferQueue);
 	mMainCmdPool = CreateCommandPool(deviceInfo.graphicsQueueIndex);
@@ -49,10 +50,22 @@ Renderer::Renderer(const Window* window)
 	mSwapchain = CreateSwapchain(mSwapchainSurfaceFormat);
 	mImageCount = GetSwapchainImagesCount();
 	mImages = GetSwapchainImages(mImageCount);
+	mIsImageFirstTime.resize(mImages.size());
+	mRenderpass = CreateRenderPass();
+
 	for (VkImage image : mImages)
 	{
 		VkImageView imgView = CreateImageView(mSwapchainSurfaceFormat.format, image, VK_IMAGE_ASPECT_COLOR_BIT);
 		mImageViews.push_back(imgView);
+		
+		FrameResources frameRes;
+		frameRes.ImageAcquired = CreateSemaphore();
+		frameRes.ImagePresented = CreateSemaphore();
+		frameRes.Fence = CreateVulkanFence();
+		frameRes.CommandPool = CreateCommandPool(deviceInfo.graphicsQueueIndex);
+		frameRes.CommandBuffer = AllocateCommandBuffer(frameRes.CommandPool);
+		frameRes.Framebuffer = CreateFramebuffer(mRenderpass, 1, &imgView, mWindow->GetWindowWidth(), mWindow->GetWindowHeight());
+		mFrameResources.push_back(frameRes);
 	}
 
 	VkSurfaceCapabilitiesKHR surfaceCapabilities;
@@ -70,7 +83,6 @@ Renderer::Renderer(const Window* window)
 	mScissor.extent = surfaceCapabilities.currentExtent;
 	mScissor.offset = { 0, 0 };
 
-	mRenderpass = CreateRenderPass();
 	mPipelineLayout = CreatePipelineLayout();
 	mGraphicsPipeline = CreateVulkanPipeline();
 
@@ -81,19 +93,40 @@ Renderer::Renderer(const Window* window)
 		{ { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
 	};
 
-	mVertCount = static_cast<uint32_t>(std::size(vertexBuffer));
+	uint32_t indexBuffer[] =
+	{
+		0, 1, 2
+	};
+
+	mIndexCount = static_cast<uint32_t>(std::size(indexBuffer));
 
 	mVertexBuffer = CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(vertexBuffer), false);
+	mIndexBuffer = CreateBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(indexBuffer), false);
 	BindBuffer(mVertexBuffer);
 	Buffer upBuf = CreateUploadBuffer(sizeof(vertexBuffer));
 	BindBuffer(upBuf);
 	UploadToBuffer(mVertexBuffer, upBuf, vertexBuffer, upBuf.size);
 	DestroyBuffer(&upBuf);
+	BindBuffer(mIndexBuffer);
+	upBuf = CreateUploadBuffer(sizeof(indexBuffer));
+	BindBuffer(upBuf);
+	UploadToBuffer(mIndexBuffer, upBuf, indexBuffer, upBuf.size);
+	DestroyBuffer(&upBuf);
 }
 
 Renderer::~Renderer()
 {
+	vkDeviceWaitIdle(mDevice);
+	for (FrameResources& frameRes : mFrameResources) {
+		vkDestroySemaphore(mDevice, frameRes.ImageAcquired, nullptr);
+		vkDestroySemaphore(mDevice, frameRes.ImagePresented, nullptr);
+		vkDestroyFence(mDevice, frameRes.Fence, nullptr);
+		vkDestroyFramebuffer(mDevice, frameRes.Framebuffer, nullptr);
+		vkFreeCommandBuffers(mDevice, frameRes.CommandPool, 1u, &frameRes.CommandBuffer);
+		vkDestroyCommandPool(mDevice, frameRes.CommandPool, nullptr);
+	}
 	DestroyBuffer(&mVertexBuffer);
+	DestroyBuffer(&mIndexBuffer);
 	vkDestroyRenderPass(mDevice, mRenderpass, nullptr);
 	vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
 	vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
@@ -121,11 +154,93 @@ void Renderer::Update()
 
 void Renderer::Draw()
 {
+	VkSemaphore imgAcq = mFrameResources[mImageIndex].ImageAcquired;
 	VK_CHECK(vkAcquireNextImageKHR(
 		mDevice,
 		mSwapchain,
 		UINT64_MAX,
-		));
+		imgAcq,
+		nullptr,
+		&mImageIndex
+	));
+
+	VkFence fence = mFrameResources[mImageIndex].Fence;
+	VkSemaphore imgPrst = mFrameResources[mImageIndex].ImagePresented;
+	VkCommandBuffer cmdBuf = mFrameResources[mImageIndex].CommandBuffer;
+	VkCommandPool cmdPool = mFrameResources[mImageIndex].CommandPool;
+	VkFramebuffer frameBuffer = mFrameResources[mImageIndex].Framebuffer;
+
+	VK_CHECK(vkWaitForFences(mDevice, 1u, &fence, VK_TRUE, UINT64_MAX));
+
+	VK_CHECK(vkResetFences(mDevice, 1u, &fence));
+
+	VK_CHECK(vkResetCommandPool(mDevice, cmdPool, 0));
+	VK_CHECK(vkResetCommandBuffer(cmdBuf, 0));
+
+	VkCommandBufferBeginInfo cmdBeginInfo = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		nullptr,
+		0,
+		nullptr
+	};
+
+	VK_CHECK(vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo));
+
+	VkClearValue clearValue;
+	clearValue.color.float32[0] = 1.0f;
+	clearValue.color.float32[1] = 0.0f;
+	clearValue.color.float32[2] = 0.0f;
+	clearValue.color.float32[3] = 1.0f;
+
+	VkRenderPassBeginInfo renderPassBeginInfo;
+	renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	renderPassBeginInfo.pNext = nullptr;
+	renderPassBeginInfo.renderPass = mRenderpass;
+	renderPassBeginInfo.framebuffer = frameBuffer;
+	renderPassBeginInfo.renderArea.extent.width = mWindow->GetWindowWidth();
+	renderPassBeginInfo.renderArea.extent.height = mWindow->GetWindowHeight();
+	renderPassBeginInfo.renderArea.offset.x = 0;
+	renderPassBeginInfo.renderArea.offset.y = 0;
+	renderPassBeginInfo.clearValueCount = 1;
+	renderPassBeginInfo.pClearValues = &clearValue;
+
+	vkCmdBeginRenderPass(cmdBuf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	VkDeviceSize vOffset = 0;
+	vkCmdBindVertexBuffers(cmdBuf, 0u, 1u, &mVertexBuffer.buffer, &vOffset);
+	vkCmdBindIndexBuffer(cmdBuf, mIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+	vkCmdSetViewport(cmdBuf, 0u, 1u, &mViewport);
+	vkCmdSetScissor(cmdBuf, 0u, 1u, &mScissor);
+	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
+	vkCmdDrawIndexed(cmdBuf, mIndexCount, 1u, 0u, 0u, 0u);
+	vkCmdEndRenderPass(cmdBuf);
+	vkEndCommandBuffer(cmdBuf);
+
+	VkSubmitInfo submitInfo;
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.pNext = nullptr;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = &imgAcq;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = &imgPrst;
+	VkPipelineStageFlags stageFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	submitInfo.pWaitDstStageMask = &stageFlags;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &cmdBuf;
+	VK_CHECK(vkQueueSubmit(mGraphicsQueue, 1u, &submitInfo, fence));
+
+	VkResult res = (VkResult)0;
+
+	VkPresentInfoKHR presentInfo;
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.pNext = nullptr;
+	presentInfo.pSwapchains = &mSwapchain;
+	presentInfo.swapchainCount = 1;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = &imgPrst;
+	presentInfo.pImageIndices = &mImageIndex;
+	presentInfo.pResults = &res;
+	VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &presentInfo));
 }
 
 VkInstance Renderer::CreateVulkanInstance() const
@@ -438,7 +553,7 @@ VkDeviceInfo Renderer::CreateLogicalDevice() const
 	queueCreateInfo[1].pNext = nullptr;
 	queueCreateInfo[1].flags = 0;
 
-	createInfo.queueCreateInfoCount = std::size(queueCreateInfo);
+	createInfo.queueCreateInfoCount = static_cast<uint32_t>(std::size(queueCreateInfo));
 	createInfo.pQueueCreateInfos = queueCreateInfo;
 
 	VK_CHECK(vkCreateDevice(mPhysicalDevice.physicalDevice, &createInfo, nullptr, &deviceInfo.device));
@@ -597,7 +712,7 @@ VkSwapchainKHR Renderer::CreateSwapchain(VkSurfaceFormatKHR& out_swapchainSurfac
 	}
 
 	createInfo.presentMode = presentMode;
-	createInfo.clipped = VK_FALSE;
+	createInfo.clipped = VK_TRUE;
 	createInfo.oldSwapchain = 0;
 
 	VK_CHECK(vkCreateSwapchainKHR(mDevice, &createInfo, nullptr, &swapchain));
@@ -630,11 +745,12 @@ VkImageView Renderer::CreateImageView(VkFormat viewFormat, VkImage image, VkImag
 	VkImageView imageView = 0;
 	VkImageViewCreateInfo createInfo;
 	createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = 0;
 	createInfo.components.a = VK_COMPONENT_SWIZZLE_A;
 	createInfo.components.r = VK_COMPONENT_SWIZZLE_R;
 	createInfo.components.b = VK_COMPONENT_SWIZZLE_B;
 	createInfo.components.g = VK_COMPONENT_SWIZZLE_G;
-	createInfo.flags = 0;
 	createInfo.format = viewFormat;
 	createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 	createInfo.image = image;
@@ -642,8 +758,7 @@ VkImageView Renderer::CreateImageView(VkFormat viewFormat, VkImage image, VkImag
 	createInfo.subresourceRange.levelCount = 1;
 	createInfo.subresourceRange.baseArrayLayer = 0;
 	createInfo.subresourceRange.layerCount = 1;
-	createInfo.subresourceRange.aspectMask = imageAspect;
-	createInfo.pNext = nullptr;
+	createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 
 	VK_CHECK(vkCreateImageView(mDevice, &createInfo, nullptr, &imageView));
 
@@ -761,6 +876,24 @@ VkRenderPass Renderer::CreateRenderPass() const
 	VK_CHECK(vkCreateRenderPass(mDevice, &createInfo, nullptr, &renderPass));
 
 	return renderPass;
+}
+
+VkFramebuffer Renderer::CreateFramebuffer(VkRenderPass renderpass, uint32_t numImageViews, VkImageView* imageViews, uint32_t width, uint32_t height) const
+{
+	VkFramebuffer framebuffer = nullptr;
+	VkFramebufferCreateInfo createInfo;
+	createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = 0;
+	createInfo.renderPass = renderpass;
+	createInfo.attachmentCount = numImageViews;
+	createInfo.pAttachments = imageViews;
+	createInfo.layers = 1;
+	createInfo.width = width;
+	createInfo.height = height;
+
+	VK_CHECK(vkCreateFramebuffer(mDevice, &createInfo, nullptr, &framebuffer));
+	return framebuffer;
 }
 
 VkPipelineLayout Renderer::CreatePipelineLayout() const
@@ -1083,7 +1216,7 @@ Buffer Renderer::CreateBuffer(VkBufferUsageFlags bufferUsage, VkDeviceSize buffe
 
 	VkMemoryRequirements memoryRequirements;
 	vkGetBufferMemoryRequirements(mDevice, buffer.buffer, &memoryRequirements);
-	buffer.size = memoryRequirements.size;
+	buffer.size = static_cast<uint32_t>(memoryRequirements.size);
 
 	VkMemoryPropertyFlagBits memoryFlagBit = cpuAccessible ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT :
 															 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -1093,7 +1226,7 @@ Buffer Renderer::CreateBuffer(VkBufferUsageFlags bufferUsage, VkDeviceSize buffe
 	VkMemoryAllocateInfo allocateInfo;
 	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocateInfo.pNext = nullptr;
-	allocateInfo.allocationSize = memoryRequirements.size;
+	allocateInfo.allocationSize = static_cast<uint32_t>(memoryRequirements.size);
 	allocateInfo.memoryTypeIndex = memIndex;
 
 	VK_CHECK(vkAllocateMemory(
@@ -1129,7 +1262,7 @@ Buffer Renderer::CreateUploadBuffer(VkDeviceSize bufferSize) const
 
 	VkMemoryRequirements memoryRequirements;
 	vkGetBufferMemoryRequirements(mDevice, buffer.buffer, &memoryRequirements);
-	buffer.size = memoryRequirements.size;
+	buffer.size = static_cast<uint32_t>(memoryRequirements.size);
 
 	VkMemoryPropertyFlagBits memoryFlagBit = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 
@@ -1232,4 +1365,5 @@ void Renderer::DestroyBuffer(Buffer* buffer) const
 {
 	vkFreeMemory(mDevice, buffer->memory, nullptr);
 	vkDestroyBuffer(mDevice, buffer->buffer, nullptr);
+	memset(buffer, 0, sizeof(Buffer));
 }
