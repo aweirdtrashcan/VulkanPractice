@@ -118,7 +118,6 @@ Renderer::Renderer(const Window* window)
 Renderer::~Renderer()
 {
 	vkDeviceWaitIdle(mDevice);
-	vkDeviceWaitIdle(mDevice);
 	for (FrameResources& frameRes : mFrameResources) {
 		vkDestroySemaphore(mDevice, frameRes.ImageAcquired, nullptr);
 		vkDestroySemaphore(mDevice, frameRes.ImagePresented, nullptr);
@@ -214,7 +213,7 @@ void Renderer::Draw()
 	vkCmdSetViewport(cmdBuf, 0u, 1u, &mViewport);
 	vkCmdSetScissor(cmdBuf, 0u, 1u, &mScissor);
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
-	vkCmdDraw(cmdBuf, 3, 1u, 0u, 0u);
+	vkCmdDrawIndexed(cmdBuf, mIndexCount, 1u, 0u, 0u, 0u);
 	vkCmdEndRenderPass(cmdBuf);
 	vkEndCommandBuffer(cmdBuf);
 
