@@ -3,8 +3,9 @@
 #include "HelperStructs.h"
 #include "glm/gtc/matrix_transform.hpp"
 #include <cassert>
+#include "EngineException.h"
 
-#define VK_CHECK(expr) { if ((expr)) { assert(false && "Vulkan Error"); } }
+#define VK_CHECK(expr) { if ((expr)) { throw EngineException(__FILE__, __LINE__, #expr); } }
 
 class Window;
 
@@ -95,4 +96,3 @@ private:
 	VkPipelineLayout mPipelineLayout = nullptr;
 	VkPipeline mGraphicsPipeline = nullptr;
 };
-

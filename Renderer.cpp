@@ -50,7 +50,6 @@ Renderer::Renderer(const Window* window)
 	mSwapchain = CreateSwapchain(mSwapchainSurfaceFormat);
 	mImageCount = GetSwapchainImagesCount();
 	mImages = GetSwapchainImages(mImageCount);
-	mIsImageFirstTime.resize(mImages.size());
 	mRenderpass = CreateRenderPass();
 
 	for (VkImage image : mImages)
@@ -78,7 +77,9 @@ Renderer::Renderer(const Window* window)
 	mViewport.minDepth = 0.0f;
 	mViewport.maxDepth = 1.0f;
 	mViewport.width = static_cast<float>(surfaceCapabilities.currentExtent.width);
-	mViewport.height = static_cast<float>(surfaceCapabilities.currentExtent.height);
+	mViewport.height = -static_cast<float>(surfaceCapabilities.currentExtent.height);
+	mViewport.x = 0.0f;
+	mViewport.y = static_cast<float>(surfaceCapabilities.currentExtent.height);
 
 	mScissor.extent = surfaceCapabilities.currentExtent;
 	mScissor.offset = { 0, 0 };
@@ -116,6 +117,7 @@ Renderer::Renderer(const Window* window)
 
 Renderer::~Renderer()
 {
+	vkDeviceWaitIdle(mDevice);
 	vkDeviceWaitIdle(mDevice);
 	for (FrameResources& frameRes : mFrameResources) {
 		vkDestroySemaphore(mDevice, frameRes.ImageAcquired, nullptr);
@@ -212,7 +214,7 @@ void Renderer::Draw()
 	vkCmdSetViewport(cmdBuf, 0u, 1u, &mViewport);
 	vkCmdSetScissor(cmdBuf, 0u, 1u, &mScissor);
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
-	vkCmdDrawIndexed(cmdBuf, mIndexCount, 1u, 0u, 0u, 0u);
+	vkCmdDraw(cmdBuf, 3, 1u, 0u, 0u);
 	vkCmdEndRenderPass(cmdBuf);
 	vkEndCommandBuffer(cmdBuf);
 
@@ -229,8 +231,6 @@ void Renderer::Draw()
 	submitInfo.pCommandBuffers = &cmdBuf;
 	VK_CHECK(vkQueueSubmit(mGraphicsQueue, 1u, &submitInfo, fence));
 
-	VkResult res = (VkResult)0;
-
 	VkPresentInfoKHR presentInfo;
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.pNext = nullptr;
@@ -239,7 +239,7 @@ void Renderer::Draw()
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pWaitSemaphores = &imgPrst;
 	presentInfo.pImageIndices = &mImageIndex;
-	presentInfo.pResults = &res;
+	presentInfo.pResults = 0;
 	VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &presentInfo));
 }
 
@@ -341,6 +341,8 @@ VkInstance Renderer::CreateVulkanInstance() const
 			std::cout << reqLay << " is NOT supported!\n";
 			if (reqLay != "VK_LAYER_KHRONOS_validation")
 				throw std::exception("One or more instance extensions requested are not supported by your GPU.");
+			else
+				requestedLayers.erase(std::begin(requestedLayers));
 		}
 	}
 
@@ -468,6 +470,8 @@ VkDeviceInfo Renderer::CreateLogicalDevice() const
 	std::vector<const char*> requestedExtensions;
 
 	requestedExtensions.push_back("VK_KHR_swapchain");
+	/* Temporary */
+	requestedExtensions.push_back("VK_KHR_maintenance1");
 
 	for (const char* reqExt : requestedExtensions)
 	{
@@ -1303,12 +1307,6 @@ void Renderer::UploadToBuffer(Buffer& destinationBuffer, Buffer& uploadBuffer, c
 	bufferCopy.srcOffset = 0;
 	bufferCopy.dstOffset = 0;
 	bufferCopy.size = bufferSize;
-
-	//VkMemoryBarrier uploadMemoryBarrier;
-	//uploadMemoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-	//uploadMemoryBarrier.pNext = nullptr;
-	//uploadMemoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-	//uploadMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
 	VK_CHECK(vkResetCommandPool(
 		mDevice,

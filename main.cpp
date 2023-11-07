@@ -1,6 +1,6 @@
 #include "Window.h"
 
-#include <exception>
+#include "EngineException.h"
 
 int main(void)
 {
@@ -16,6 +16,10 @@ int main(void)
 			returnCode = window.ProcessMessages(shouldLeave);
 			window.Render();
 		}
+	}
+	catch (const EngineException& e)
+	{
+		MessageBoxA(nullptr, e.what(), e.GetType(), MB_OK | MB_ICONEXCLAMATION);
 	}
 	catch (const std::exception& e)
 	{

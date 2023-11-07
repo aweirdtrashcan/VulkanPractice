@@ -33,6 +33,9 @@
     <ClInclude Include="Logger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EngineException.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Window.cpp">
@@ -47,15 +50,18 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="EngineException.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="CompileShader.bat">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="vertex.glsl">
+    <None Include="vertex.vert">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="fragment.glsl">
+    <None Include="fragment.frag">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
