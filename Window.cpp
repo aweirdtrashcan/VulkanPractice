@@ -191,6 +191,7 @@ LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 
 		// WM_DESTROY is sent when the window is being destroyed.
 	case WM_DESTROY:
+		mRenderer->WaitForDeviceIdle();
 		PostQuitMessage(0);
 		return 0;
 

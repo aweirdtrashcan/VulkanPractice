@@ -155,6 +155,7 @@
     <ClInclude Include="HelperStructs.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="Renderer.h" />
+    <ClInclude Include="Timer.h" />
     <ClInclude Include="Window.h" />
     <ClInclude Include="WindowsException.h" />
   </ItemGroup>
@@ -165,6 +166,7 @@
     <None Include="fragment.frag">
       <FileType>Document</FileType>
     </None>
+    <ClCompile Include="Timer.cpp" />
     <ClCompile Include="Window.cpp" />
     <ClCompile Include="WindowsException.cpp" />
   </ItemGroup>

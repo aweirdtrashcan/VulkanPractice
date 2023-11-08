@@ -33,6 +33,7 @@ Renderer::Renderer(const Window* window)
 	:
 	mWindow(window)
 {
+	mTimer.MarkTime();
 	msgBuf = (char*)malloc(MSG_BUF_SIZE);
 	mInstance = CreateVulkanInstance();
 	mDebugMessenger = CreateVulkanMessenger();
@@ -84,9 +85,25 @@ Renderer::Renderer(const Window* window)
 	mScissor.extent = surfaceCapabilities.currentExtent;
 	mScissor.offset = { 0, 0 };
 
+	mGlobalDescriptorSetLayout = CreateDescriptorSetLayout();
+	mGlobalDescriptorPool = CreateDescriptorPool();
+	std::vector<VkDescriptorSet> descriptorSets = AllocateGlobalDescriptorSets();
+
+	/* Start uniform buffer */
+	mGlobalUniformBuffer = CreateGlobalUniformBuffer(mImageCount);
+	BindBuffer(mGlobalUniformBuffer);
+
+	
+	/* End uniform buffer */
+
+	for (size_t i = 0; i < mFrameResources.size(); i++) 
+	{
+		mFrameResources[i].GlobalDescriptorSet = descriptorSets[i];
+		UpdateDescriptorSet(descriptorSets[i], i);
+	}
 	mPipelineLayout = CreatePipelineLayout();
 	mGraphicsPipeline = CreateVulkanPipeline();
-
+	
 	VertexBufferModel vertexBuffer[3] =
 	{
 		{ {  0.0f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
@@ -107,18 +124,19 @@ Renderer::Renderer(const Window* window)
 	Buffer upBuf = CreateUploadBuffer(sizeof(vertexBuffer));
 	BindBuffer(upBuf);
 	UploadToBuffer(mVertexBuffer, upBuf, vertexBuffer, upBuf.size);
-	DestroyBuffer(&upBuf);
+	DestroyBuffer(upBuf);
 	BindBuffer(mIndexBuffer);
 	upBuf = CreateUploadBuffer(sizeof(indexBuffer));
 	BindBuffer(upBuf);
 	UploadToBuffer(mIndexBuffer, upBuf, indexBuffer, upBuf.size);
-	DestroyBuffer(&upBuf);
+	DestroyBuffer(upBuf);
 }
 
 Renderer::~Renderer()
 {
 	vkDeviceWaitIdle(mDevice);
 	for (FrameResources& frameRes : mFrameResources) {
+		vkFreeDescriptorSets(mDevice, mGlobalDescriptorPool, 1u, &frameRes.GlobalDescriptorSet);
 		vkDestroySemaphore(mDevice, frameRes.ImageAcquired, nullptr);
 		vkDestroySemaphore(mDevice, frameRes.ImagePresented, nullptr);
 		vkDestroyFence(mDevice, frameRes.Fence, nullptr);
@@ -126,8 +144,11 @@ Renderer::~Renderer()
 		vkFreeCommandBuffers(mDevice, frameRes.CommandPool, 1u, &frameRes.CommandBuffer);
 		vkDestroyCommandPool(mDevice, frameRes.CommandPool, nullptr);
 	}
-	DestroyBuffer(&mVertexBuffer);
-	DestroyBuffer(&mIndexBuffer);
+	vkDestroyDescriptorSetLayout(mDevice, mGlobalDescriptorSetLayout, nullptr);
+	vkDestroyDescriptorPool(mDevice, mGlobalDescriptorPool, nullptr);
+	DestroyBuffer(mVertexBuffer);
+	DestroyBuffer(mIndexBuffer);
+	DestroyBuffer(mGlobalUniformBuffer);
 	vkDestroyRenderPass(mDevice, mRenderpass, nullptr);
 	vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
 	vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
@@ -151,10 +172,38 @@ Renderer::~Renderer()
 
 void Renderer::Update()
 {
+	if (!mCanRender) return;
+
+	mGlobalUniform.projection = glm::perspectiveFovLH(
+		45.f,
+		(float)mWindow->GetWindowWidth(),
+		(float)mWindow->GetWindowHeight(),
+		0.1f,
+		100.f
+	);
+
+	static float rotation = 0.0f;
+	rotation += 0.03f * 0.010f;
+
+	glm::vec3 eye = { 0.0f, 0.0f, -3.0f };
+	glm::vec3 center = { 0.0f, 0.0f, 0.0f };
+	glm::vec3 up = { 0.0f, 1.0f, 0.0f };
+	mGlobalUniform.view = glm::lookAtLH(eye, center, up);
+
+	mGlobalUniform.tempModel = glm::mat4(1.0f);
+	mGlobalUniform.tempModel = glm::translate(mGlobalUniform.tempModel, glm::vec3(0.0f, 0.0f, 0.0f)) * 
+							   glm::rotate(mGlobalUniform.tempModel, rotation, glm::vec3(0.0f, 0.0f, 1.0f)) *
+							   glm::scale(mGlobalUniform.tempModel, glm::vec3(1.0f, 1.0f, 1.0f));
+
+	for (uint32_t i = 0; i < mImageCount; i++)
+	{
+		UpdateCpuGlobalUniformBuffer((uint32_t)i, &mGlobalUniform);
+	}
 }
 
 void Renderer::Draw()
 {
+	if (!mCanRender) return;
 	VkSemaphore imgAcq = mFrameResources[mImageIndex].ImageAcquired;
 	VK_CHECK(vkAcquireNextImageKHR(
 		mDevice,
@@ -207,6 +256,18 @@ void Renderer::Draw()
 
 	vkCmdBeginRenderPass(cmdBuf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+	vkCmdBindDescriptorSets(
+		cmdBuf,
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		mPipelineLayout,
+		0u,
+		1u,
+		&mFrameResources[mImageIndex].GlobalDescriptorSet,
+		0u,
+		nullptr
+	);
+
+
 	VkDeviceSize vOffset = 0;
 	vkCmdBindVertexBuffers(cmdBuf, 0u, 1u, &mVertexBuffer.buffer, &vOffset);
 	vkCmdBindIndexBuffer(cmdBuf, mIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -240,6 +301,22 @@ void Renderer::Draw()
 	presentInfo.pImageIndices = &mImageIndex;
 	presentInfo.pResults = 0;
 	VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &presentInfo));
+
+	static double accumulatedDelta = 0.0;
+	static int fps = 0;
+	accumulatedDelta += mTimer.GetDelta();
+	if (accumulatedDelta >= 1.0)
+	{
+		char fpsString[50];
+		snprintf(fpsString, sizeof(fpsString), "Vulkan Application | FPS: %d", fps);
+		mWindow->ChangeWindowTitle(fpsString);
+		accumulatedDelta = 0.0;
+		fps = 0;
+	}
+	else
+	{
+		fps++;
+	}
 }
 
 VkInstance Renderer::CreateVulkanInstance() const
@@ -899,23 +976,133 @@ VkFramebuffer Renderer::CreateFramebuffer(VkRenderPass renderpass, uint32_t numI
 	return framebuffer;
 }
 
-VkPipelineLayout Renderer::CreatePipelineLayout() const
+Buffer Renderer::CreateGlobalUniformBuffer(uint32_t numFrames) const
 {
-	/* TODO: Uniform buffers*/
+	Buffer buffer;
+	VkBufferCreateInfo createInfo;
+	createInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.queueFamilyIndexCount = 0;
+	createInfo.pQueueFamilyIndices = nullptr;
+	createInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	createInfo.size = numFrames * static_cast<uint32_t>(sizeof(GlobalUniform));
+	createInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_2_TRANSFER_DST_BIT_KHR;
+	createInfo.flags = 0;
+
+	VK_CHECK(vkCreateBuffer(mDevice, &createInfo, nullptr, &buffer.buffer));
+
+	VkMemoryRequirements requirements;
+	vkGetBufferMemoryRequirements(mDevice, buffer.buffer, &requirements);
+	buffer.size = static_cast<uint32_t>(requirements.size);
+
+	uint32_t memIndex = FindMemoryIndex(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	VkMemoryAllocateInfo allocateInfo;
+	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocateInfo.pNext = nullptr;
+	allocateInfo.allocationSize = requirements.size;
+	allocateInfo.memoryTypeIndex = memIndex;
+
+	VK_CHECK(vkAllocateMemory(mDevice, &allocateInfo, nullptr, &buffer.memory));
+
+	return buffer;
+}
+
+VkDescriptorSetLayout Renderer::CreateDescriptorSetLayout() const
+{
+	VkDescriptorSetLayoutBinding descSetLayoutBinding[1];
+	descSetLayoutBinding[0].binding = 0;
+	descSetLayoutBinding[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descSetLayoutBinding[0].descriptorCount = 1;
+	descSetLayoutBinding[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	descSetLayoutBinding[0].pImmutableSamplers = nullptr;
 
 	VkDescriptorSetLayoutCreateInfo descSetLayoutCreateInfo;
 	descSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	descSetLayoutCreateInfo.pNext = nullptr;
 	descSetLayoutCreateInfo.flags = 0;
-	descSetLayoutCreateInfo.bindingCount = 0u;
-	descSetLayoutCreateInfo.pBindings = nullptr;
+	descSetLayoutCreateInfo.bindingCount = static_cast<uint32_t>(std::size(descSetLayoutBinding));
+	descSetLayoutCreateInfo.pBindings = descSetLayoutBinding;
 
+	VkDescriptorSetLayout descSetLayout = nullptr;
+
+	VK_CHECK(vkCreateDescriptorSetLayout(mDevice, &descSetLayoutCreateInfo, nullptr, &descSetLayout));
+
+	return descSetLayout;
+}
+
+VkDescriptorPool Renderer::CreateDescriptorPool() const
+{
+	VkDescriptorPoolCreateInfo createInfo;
+	VkDescriptorPoolSize size;
+	size.descriptorCount = 1000;
+	size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	VkDescriptorPool descriptorPool = nullptr;
+
+	createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	createInfo.pNext = nullptr;
+	createInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+	createInfo.poolSizeCount = 1;
+	createInfo.pPoolSizes = &size;
+	createInfo.maxSets = 1000;
+	
+	VK_CHECK(vkCreateDescriptorPool(mDevice, &createInfo, nullptr, &descriptorPool));
+	
+	return descriptorPool;
+}
+
+std::vector<VkDescriptorSet> Renderer::AllocateGlobalDescriptorSets() const
+{
+	std::vector<VkDescriptorSet> descriptorSets(mImageCount);
+	VkDescriptorSetAllocateInfo allocateInfo;
+	allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocateInfo.pNext = nullptr;
+	allocateInfo.descriptorPool = mGlobalDescriptorPool;
+	allocateInfo.descriptorSetCount = mImageCount;
+	std::vector<VkDescriptorSetLayout> layouts;
+	for (uint32_t i = 0; i < mImageCount; i++)
+	{
+		layouts.push_back(mGlobalDescriptorSetLayout);
+	}
+	allocateInfo.pSetLayouts = layouts.data();
+
+	VK_CHECK(vkAllocateDescriptorSets(mDevice, &allocateInfo, descriptorSets.data()));
+	return descriptorSets;
+}
+
+void Renderer::UpdateDescriptorSet(VkDescriptorSet descriptorSet, uint64_t offset) const
+{
+	VkDescriptorBufferInfo binfo;
+	binfo.buffer = mGlobalUniformBuffer.buffer;
+	binfo.range = sizeof(GlobalUniform);
+	binfo.offset = offset * sizeof(GlobalUniform);
+
+	VkWriteDescriptorSet write;
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.pNext = nullptr;
+	write.dstSet = descriptorSet;
+	write.dstBinding = 0;
+	write.dstArrayElement = 0;
+	write.descriptorCount = 1;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	write.pImageInfo = nullptr;
+	write.pBufferInfo = &binfo;
+	write.pTexelBufferView = nullptr;
+
+	vkUpdateDescriptorSets(mDevice, 1, &write, 0, nullptr);
+}
+
+VkPipelineLayout Renderer::CreatePipelineLayout() const
+{
+	/* Global Descriptor */
+	
 	VkPipelineLayoutCreateInfo pipeLayoutCreateInfo;
 	pipeLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeLayoutCreateInfo.pNext = nullptr;
 	pipeLayoutCreateInfo.flags = 0;
-	pipeLayoutCreateInfo.setLayoutCount = 0;
-	pipeLayoutCreateInfo.pSetLayouts = nullptr;
+	pipeLayoutCreateInfo.setLayoutCount = 1;
+	pipeLayoutCreateInfo.pSetLayouts = &mGlobalDescriptorSetLayout;
 	pipeLayoutCreateInfo.pushConstantRangeCount = 0;
 	pipeLayoutCreateInfo.pPushConstantRanges = nullptr;
 
@@ -1358,9 +1545,9 @@ void Renderer::BindBuffer(const Buffer& buffer, VkDeviceSize offset) const
 	));
 }
 
-void Renderer::DestroyBuffer(Buffer* buffer) const
+void Renderer::DestroyBuffer(Buffer& buffer) const
 {
-	vkFreeMemory(mDevice, buffer->memory, nullptr);
-	vkDestroyBuffer(mDevice, buffer->buffer, nullptr);
-	memset(buffer, 0, sizeof(Buffer));
+	vkFreeMemory(mDevice, buffer.memory, nullptr);
+	vkDestroyBuffer(mDevice, buffer.buffer, nullptr);
+	memset(&buffer, 0, sizeof(Buffer));
 }

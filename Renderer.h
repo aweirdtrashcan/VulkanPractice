@@ -4,6 +4,7 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include <cassert>
 #include "EngineException.h"
+#include "Timer.h"
 
 #define VK_CHECK(expr) { if ((expr)) { throw EngineException(__FILE__, __LINE__, #expr); } }
 
@@ -22,6 +23,12 @@ public:
 	void Update();
 	void Draw();
 
+	void WaitForDeviceIdle()
+	{
+		mCanRender = false;
+		vkDeviceWaitIdle(mDevice);
+	}
+
 private:
 	VkInstance CreateVulkanInstance() const;
 	VkDebugUtilsMessengerEXT CreateVulkanMessenger() const;
@@ -37,6 +44,18 @@ private:
 	VkShaderModule CreateShaderModule(const char* shaderPath) const;
 	VkRenderPass CreateRenderPass() const;
 	VkFramebuffer CreateFramebuffer(VkRenderPass renderpass, uint32_t numImageViews, VkImageView* imageViews, uint32_t width, uint32_t height) const;
+	Buffer CreateGlobalUniformBuffer(uint32_t numFrames) const;
+	VkDescriptorSetLayout CreateDescriptorSetLayout() const;
+	VkDescriptorPool CreateDescriptorPool() const;
+	std::vector<VkDescriptorSet> AllocateGlobalDescriptorSets() const;
+	void UpdateCpuGlobalUniformBuffer(uint64_t offset, void* data) const
+	{
+		void* mapped = nullptr;
+		VK_CHECK(vkMapMemory(mDevice, mGlobalUniformBuffer.memory, offset * sizeof(GlobalUniform), sizeof(GlobalUniform), 0, &mapped));
+		memcpy(mapped, data, sizeof(GlobalUniform));
+		vkUnmapMemory(mDevice, mGlobalUniformBuffer.memory);
+	}
+	void UpdateDescriptorSet(VkDescriptorSet descriptorSet, uint64_t offset) const;
 	VkPipelineLayout CreatePipelineLayout() const;
 	VkPipeline CreateVulkanPipeline() const;
 	VkFence CreateVulkanFence() const;
@@ -47,10 +66,13 @@ private:
 	void UploadToBuffer(Buffer& destinationBuffer, Buffer& uploadBuffer, const void* data, VkDeviceSize bufferSize);
 	void BindBuffer(const Buffer& buffer, VkDeviceSize offset) const;
 	inline void BindBuffer(const Buffer& buffer) const { BindBuffer(buffer, 0); }
-	void DestroyBuffer(Buffer* buffer) const;
+	void DestroyBuffer(Buffer& buffer) const;
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
+	Timer mTimer;
+
+	bool mCanRender = true;
 
 	const Window* mWindow;
 	VkInstance mInstance = nullptr;
@@ -79,7 +101,6 @@ private:
 
 	std::vector<VkImage> mImages;
 	std::vector<VkImageView> mImageViews;
-	std::vector<bool> mIsImageFirstTime;
 	uint32_t mImageCount = 0;
 
 	std::vector<FrameResources> mFrameResources;
@@ -93,6 +114,11 @@ private:
 	Buffer mIndexBuffer;
 
 	uint32_t mIndexCount = 0;
+
+	VkDescriptorPool mGlobalDescriptorPool = nullptr;
+	VkDescriptorSetLayout mGlobalDescriptorSetLayout = nullptr;
+	GlobalUniform mGlobalUniform{};
+	Buffer mGlobalUniformBuffer;
 
 	VkPipelineLayout mPipelineLayout = nullptr;
 	VkPipeline mGraphicsPipeline = nullptr;

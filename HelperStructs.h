@@ -42,4 +42,21 @@ struct FrameResources
 	VkCommandBuffer CommandBuffer;
 	VkCommandPool CommandPool;
 	VkFramebuffer Framebuffer;
+
+	VkDescriptorSet GlobalDescriptorSet;
 };
+
+struct GlobalUniform 
+{
+	glm::mat4 projection;
+	glm::mat4 view;
+	glm::mat4 tempModel;
+	glm::mat4 padding[1];
+};
+
+struct SingleObjectUniform 
+{
+	glm::mat4 mvp;
+};
+
+inline uint64_t CalculateConstantBufferSize(uint64_t bufferSize) { return (bufferSize + 255) & ~255; }

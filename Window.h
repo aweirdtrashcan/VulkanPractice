@@ -24,6 +24,12 @@ public:
 		return (double)deltaUnits * mSecondsPerCount;
 	}
 
+	void ChangeWindowTitle(const char* title) const
+	{
+		SetWindowTextA(mHwnd, title);
+	}
+
+
 
 private:
 	static LRESULT __stdcall MainWndProcPassThrough(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
