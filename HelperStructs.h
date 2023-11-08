@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <glm/matrix.hpp>
+#include <DirectXMath.h>
 
 struct VkPhysicalDeviceInfo
 {
@@ -22,8 +22,8 @@ struct VkDeviceInfo
 
 struct VertexBufferModel
 {
-	glm::vec3 pos;
-	glm::vec4 color;
+	DirectX::XMFLOAT3 pos;
+	DirectX::XMFLOAT4 color;
 };
 
 struct Buffer
@@ -48,15 +48,15 @@ struct FrameResources
 
 struct GlobalUniform 
 {
-	glm::mat4 projection;
-	glm::mat4 view;
-	glm::mat4 tempModel;
-	glm::mat4 padding[1];
+	DirectX::XMFLOAT4X4 projection;
+	DirectX::XMFLOAT4X4 view;
+	DirectX::XMFLOAT4X4 tempModel;
+	DirectX::XMFLOAT4X4 padding[1];
 };
 
 struct SingleObjectUniform 
 {
-	glm::mat4 mvp;
+	DirectX::XMFLOAT4X4 mvp;
 };
 
 inline uint64_t CalculateConstantBufferSize(uint64_t bufferSize) { return (bufferSize + 255) & ~255; }

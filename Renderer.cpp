@@ -7,6 +7,8 @@
 #include <vector>
 #include <iostream>
 
+using namespace DirectX;
+
 // stupid windows macro
 #ifdef CreateSemaphore
 #undef CreateSemaphore
@@ -174,26 +176,25 @@ void Renderer::Update()
 {
 	if (!mCanRender) return;
 
-	mGlobalUniform.projection = glm::perspectiveFovLH(
-		45.f,
-		(float)mWindow->GetWindowWidth(),
-		(float)mWindow->GetWindowHeight(),
-		0.1f,
-		100.f
-	);
+	float aspectRatio = (float)mWindow->GetWindowWidth() / (float)mWindow->GetWindowHeight();
+	XMMATRIX perspective = XMMatrixPerspectiveFovLH(45.f, aspectRatio, 0.1, 100.f);
+	XMStoreFloat4x4(&mGlobalUniform.projection, perspective);
 
 	static float rotation = 0.0f;
 	rotation += 0.03f * 0.010f;
 
-	glm::vec3 eye = { 0.0f, 0.0f, -3.0f };
-	glm::vec3 center = { 0.0f, 0.0f, 0.0f };
-	glm::vec3 up = { 0.0f, 1.0f, 0.0f };
-	mGlobalUniform.view = glm::lookAtLH(eye, center, up);
+	XMVECTOR eye = { 0.0f, 0.0f, -3.0f, 0.0f };
+	XMVECTOR center = { 0.0f, 0.0f, 0.0f, 0.0f };
+	XMVECTOR up = { 0.0f, 1.0f, 0.0f, 0.0f };
 
-	mGlobalUniform.tempModel = glm::mat4(1.0f);
-	mGlobalUniform.tempModel = glm::translate(mGlobalUniform.tempModel, glm::vec3(0.0f, 0.0f, 0.0f)) * 
-							   glm::rotate(mGlobalUniform.tempModel, rotation, glm::vec3(0.0f, 0.0f, 1.0f)) *
-							   glm::scale(mGlobalUniform.tempModel, glm::vec3(1.0f, 1.0f, 1.0f));
+	XMMATRIX lookAt = XMMatrixLookAtLH(eye, center, up);
+	XMStoreFloat4x4(&mGlobalUniform.view, lookAt);
+
+	XMMATRIX mvp = XMMatrixTranslation(0.0f, 0.0f, 0.0f) * 
+				   XMMatrixRotationZ(rotation) *
+				   XMMatrixScaling(1.0f, 1.0f, 1.0f);
+
+	XMStoreFloat4x4(&mGlobalUniform.tempModel, mvp);
 
 	for (uint32_t i = 0; i < mImageCount; i++)
 	{
@@ -267,7 +268,6 @@ void Renderer::Draw()
 		nullptr
 	);
 
-
 	VkDeviceSize vOffset = 0;
 	vkCmdBindVertexBuffers(cmdBuf, 0u, 1u, &mVertexBuffer.buffer, &vOffset);
 	vkCmdBindIndexBuffer(cmdBuf, mIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
@@ -305,6 +305,7 @@ void Renderer::Draw()
 	static double accumulatedDelta = 0.0;
 	static int fps = 0;
 	accumulatedDelta += mTimer.GetDelta();
+	fps++;
 	if (accumulatedDelta >= 1.0)
 	{
 		char fpsString[50];
@@ -312,10 +313,6 @@ void Renderer::Draw()
 		mWindow->ChangeWindowTitle(fpsString);
 		accumulatedDelta = 0.0;
 		fps = 0;
-	}
-	else
-	{
-		fps++;
 	}
 }
 
