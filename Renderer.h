@@ -48,14 +48,8 @@ private:
 	VkDescriptorSetLayout CreateDescriptorSetLayout() const;
 	VkDescriptorPool CreateDescriptorPool() const;
 	std::vector<VkDescriptorSet> AllocateGlobalDescriptorSets() const;
-	void UpdateCpuGlobalUniformBuffer(uint64_t offset, void* data) const
-	{
-		void* mapped = nullptr;
-		VK_CHECK(vkMapMemory(mDevice, mGlobalUniformBuffer.memory, offset * sizeof(GlobalUniform), sizeof(GlobalUniform), 0, &mapped));
-		memcpy(mapped, data, sizeof(GlobalUniform));
-		vkUnmapMemory(mDevice, mGlobalUniformBuffer.memory);
-	}
-	void UpdateDescriptorSet(VkDescriptorSet descriptorSet, uint64_t offset) const;
+	void UpdateUniformBuffer(Buffer buffer, uint64_t bufferStride, uint64_t offset, void* data) const;
+	void UpdateDescriptorSet(Buffer buffer, uint64_t bufferStride, VkDescriptorSet descriptorSet, uint64_t offset, uint32_t binding) const;
 	VkPipelineLayout CreatePipelineLayout() const;
 	VkPipeline CreateVulkanPipeline() const;
 	VkFence CreateVulkanFence() const;
@@ -67,12 +61,17 @@ private:
 	void BindBuffer(const Buffer& buffer, VkDeviceSize offset) const;
 	inline void BindBuffer(const Buffer& buffer) const { BindBuffer(buffer, 0); }
 	void DestroyBuffer(Buffer& buffer) const;
+	Buffer CreateUniformBuffer(uint64_t bufferSize) const;
+	VkDescriptorSet CreateDescriptorSet() const;
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
 	Timer mTimer;
 
 	bool mCanRender = true;
+
+	double mAccumulatedDelta = 0.0;
+	int mFps = 0;
 
 	const Window* mWindow;
 	VkInstance mInstance = nullptr;

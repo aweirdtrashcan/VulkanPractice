@@ -44,6 +44,8 @@ struct FrameResources
 	VkFramebuffer Framebuffer;
 
 	VkDescriptorSet GlobalDescriptorSet;
+	Buffer ObjectUniformBuffer;
+	VkDescriptorSet ObjectDescriptorSet;
 };
 
 struct GlobalUniform 
@@ -51,12 +53,12 @@ struct GlobalUniform
 	DirectX::XMFLOAT4X4 projection;
 	DirectX::XMFLOAT4X4 view;
 	DirectX::XMFLOAT4X4 tempModel;
-	DirectX::XMFLOAT4X4 padding[1];
 };
 
 struct SingleObjectUniform 
 {
+	DirectX::XMFLOAT4X4 model;
 	DirectX::XMFLOAT4X4 mvp;
 };
 
-inline uint64_t CalculateConstantBufferSize(uint64_t bufferSize) { return (bufferSize + 255) & ~255; }
+inline constexpr uint64_t CalculateUniformBufferSize(uint64_t bufferSize) { return (bufferSize + 255) & ~255; }

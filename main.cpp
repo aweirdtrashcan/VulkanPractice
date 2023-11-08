@@ -9,7 +9,7 @@ int main(void)
 
 	try
 	{
-		Window window(L"Vulkan Application", 800, 600);
+		Window window(L"Vulkan Application", 1280, 600);
 
 		while (!shouldLeave)
 		{
