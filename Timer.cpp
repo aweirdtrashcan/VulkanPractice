@@ -22,11 +22,11 @@ double Timer::PeekTime() const
 	return (double)(currTime - mMarkedTime) * mSecondsPerFrequency;
 }
 
-double Timer::GetDelta()
+float Timer::GetDelta()
 {
 	__int64 currDelta = 0;
 	QueryPerformanceCounter((LARGE_INTEGER*)&currDelta);
-	double dDelta = static_cast<double>(currDelta - mLastDelta) * mSecondsPerFrequency;
+	float dDelta = static_cast<float>(currDelta - mLastDelta) * (float)mSecondsPerFrequency;
 	mLastDelta = currDelta;
 	return dDelta;
 }

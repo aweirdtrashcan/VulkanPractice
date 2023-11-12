@@ -44,8 +44,8 @@ struct FrameResources
 	VkFramebuffer Framebuffer;
 
 	VkDescriptorSet GlobalDescriptorSet;
-	Buffer ObjectUniformBuffer;
-	VkDescriptorSet ObjectDescriptorSet;
+	Buffer* ObjectUniformBuffer;
+	std::vector<VkDescriptorSet> ObjectDescriptorSet;
 };
 
 struct GlobalUniform 

@@ -95,46 +95,48 @@ Renderer::Renderer(const Window* window)
 	mGlobalUniformBuffer = CreateGlobalUniformBuffer(mImageCount);
 	BindBuffer(mGlobalUniformBuffer);
 
-	/* End uniform buffer */
+	mMeshGeometry = CreateMeshGeometry();
 
-	for (size_t i = 0; i < mFrameResources.size(); i++) 
-	{
+	RenderItem renderItem;
+	renderItem.firstIndex = mMeshGeometry.Geometries["Triangle"].firstIndex;
+	renderItem.indexCount = mMeshGeometry.Geometries["Triangle"].indexCount;
+	renderItem.vertexOffset = mMeshGeometry.Geometries["Triangle"].vertexOffset;
+	renderItem.MeshGeo = &mMeshGeometry;
+	renderItem.UniformBuffer.model = XMFLOAT4X4();
+	renderItem.UniformBuffer.mvp = XMFLOAT4X4();
+	mRenderItems.push_back(renderItem);
+
+	RenderItem renderItem2;
+	renderItem2.firstIndex = mMeshGeometry.Geometries["Square"].firstIndex;
+	renderItem2.indexCount = mMeshGeometry.Geometries["Square"].indexCount;
+	renderItem2.vertexOffset = mMeshGeometry.Geometries["Square"].vertexOffset;
+	renderItem2.MeshGeo = &mMeshGeometry;
+	renderItem2.UniformBuffer.model = XMFLOAT4X4();
+	renderItem2.UniformBuffer.mvp = XMFLOAT4X4();
+	mRenderItems.push_back(renderItem2);
+
+	uint64_t renderItemCount = mRenderItems.size();
+
+	Buffer* ObjectUniformBuffer = new Buffer;
+	*ObjectUniformBuffer = CreateUniformBuffer((renderItemCount * mImageCount) * CalculateUniformBufferSize(sizeof(renderItem.UniformBuffer)));
+
+	BindBuffer(*ObjectUniformBuffer);
+
+	for (size_t i = 0; i < mFrameResources.size(); i++) {
 		mFrameResources[i].GlobalDescriptorSet = descriptorSets[i];
 		UpdateDescriptorSet(mGlobalUniformBuffer, sizeof(GlobalUniform), descriptorSets[i], i, 0);
-		mFrameResources[i].ObjectDescriptorSet = CreateDescriptorSet();
-		mFrameResources[i].ObjectUniformBuffer = CreateUniformBuffer(sizeof(SingleObjectUniform));
-		BindBuffer(mFrameResources[i].ObjectUniformBuffer);
-		UpdateDescriptorSet(mFrameResources[i].ObjectUniformBuffer, sizeof(SingleObjectUniform), mFrameResources[i].ObjectDescriptorSet, 0, 0);
+		mFrameResources[i].ObjectUniformBuffer = ObjectUniformBuffer;
+		for (uint64_t j = 0; j < renderItemCount; j++) {
+			VkDescriptorSet descriptorSet = CreateDescriptorSet();
+			mFrameResources[i].ObjectDescriptorSet.push_back(descriptorSet);
+			UpdateDescriptorSet(*ObjectUniformBuffer, CalculateUniformBufferSize(sizeof(SingleObjectUniform)), descriptorSet, i * renderItemCount + j, 0);
+		}
 	}
+	
+	/* End uniform buffer */
+
 	mPipelineLayout = CreatePipelineLayout();
 	mGraphicsPipeline = CreateVulkanPipeline();
-	
-	VertexBufferModel vertexBuffer[3] =
-	{
-		{ {  0.0f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-		{ {  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-		{ { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
-	};
-
-	uint32_t indexBuffer[] =
-	{
-		0, 1, 2
-	};
-
-	mIndexCount = static_cast<uint32_t>(std::size(indexBuffer));
-
-	mVertexBuffer = CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(vertexBuffer), false);
-	mIndexBuffer = CreateBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(indexBuffer), false);
-	BindBuffer(mVertexBuffer);
-	Buffer upBuf = CreateUploadBuffer(sizeof(vertexBuffer));
-	BindBuffer(upBuf);
-	UploadToBuffer(mVertexBuffer, upBuf, vertexBuffer, upBuf.size);
-	DestroyBuffer(upBuf);
-	BindBuffer(mIndexBuffer);
-	upBuf = CreateUploadBuffer(sizeof(indexBuffer));
-	BindBuffer(upBuf);
-	UploadToBuffer(mIndexBuffer, upBuf, indexBuffer, upBuf.size);
-	DestroyBuffer(upBuf);
 
 	static float aspectRatio = (float)mWindow->GetWindowWidth() / (float)mWindow->GetWindowHeight();
 	XMMATRIX perspective = XMMatrixPerspectiveFovLH(45.f, aspectRatio, 0.1, 100.f);
@@ -161,11 +163,12 @@ Renderer::~Renderer()
 		vkDestroyCommandPool(mDevice, frameRes.CommandPool, nullptr);
 		DestroyBuffer(frameRes.ObjectUniformBuffer);
 	}
+	delete mFrameResources[0].ObjectUniformBuffer;
 	vkDestroyDescriptorSetLayout(mDevice, mGlobalDescriptorSetLayout, nullptr);
 	vkDestroyDescriptorPool(mDevice, mGlobalDescriptorPool, nullptr);
-	DestroyBuffer(mVertexBuffer);
-	DestroyBuffer(mIndexBuffer);
-	DestroyBuffer(mGlobalUniformBuffer);
+	DestroyBuffer(&mMeshGeometry.IndexBuffer);
+	DestroyBuffer(&mMeshGeometry.VertexBuffer);
+	DestroyBuffer(&mGlobalUniformBuffer);
 	vkDestroyRenderPass(mDevice, mRenderpass, nullptr);
 	vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
 	vkDestroyPipeline(mDevice, mGraphicsPipeline, nullptr);
@@ -185,13 +188,24 @@ Renderer::~Renderer()
 #endif
 	vkDestroyInstance(mInstance, nullptr);
 	free(msgBuf);
+	printf("%s\n", "Goodbyeeeeee =)");
 }
 
 void Renderer::Update()
 {
 	if (!mCanRender) return;
+	mImgAcq = mFrameResources[mImageIndex].ImageAcquired;
+	VK_CHECK(vkAcquireNextImageKHR(
+		mDevice,
+		mSwapchain,
+		UINT64_MAX,
+		mImgAcq,
+		nullptr,
+		&mImageIndex
+	));
 
-	mAccumulatedDelta += mTimer.GetDelta();
+	double deltaTime = mTimer.GetDelta();
+	mAccumulatedDelta += deltaTime;
 	mFps++;
 	if (mAccumulatedDelta >= 1.0)
 	{
@@ -202,34 +216,32 @@ void Renderer::Update()
 		mFps = 0;
 	}
 
+	float pos[] = { -1.0f, 1.0f };
+
 	static float rotation = 0.0f;
-	rotation += 0.03f * 0.010f;
-
-	XMMATRIX model = XMMatrixRotationZ(rotation);
-	XMMATRIX mvp = model * XMLoadFloat4x4(&mGlobalUniform.view) * XMLoadFloat4x4(&mGlobalUniform.projection);
-	SingleObjectUniform sou;
-	XMStoreFloat4x4(&sou.mvp, mvp);
-	XMStoreFloat4x4(&sou.model, model);
-
-	for (size_t i = 0; i < mFrameResources.size(); i++)
-	{
-		UpdateUniformBuffer(mGlobalUniformBuffer, sizeof(GlobalUniform), i, &mGlobalUniform);
-		UpdateUniformBuffer(mFrameResources[i].ObjectUniformBuffer, sizeof(SingleObjectUniform), 0, &sou);
+	if (rotation >= XM_2PI) {
+		rotation = 0.0f;
 	}
+
+	rotation += 2.0f * (float)deltaTime;
+
+	for (size_t i = 0; i < mRenderItems.size(); i++) {
+		RenderItem& rItem = mRenderItems[i];
+
+		XMMATRIX model = XMMatrixRotationZ(rotation) * XMMatrixTranslation(pos[i], 0.0f, 0.0f);
+		XMMATRIX mvp = model * XMLoadFloat4x4(&mGlobalUniform.view) * XMLoadFloat4x4(&mGlobalUniform.projection);
+
+		XMStoreFloat4x4(&rItem.UniformBuffer.mvp, mvp);
+		XMStoreFloat4x4(&rItem.UniformBuffer.model, model);
+		UpdateUniformBuffer(*mFrameResources[mImageIndex].ObjectUniformBuffer, sizeof(SingleObjectUniform), (uint64_t)mImageIndex * mRenderItems.size() + i, &rItem.UniformBuffer);
+	}
+
+	UpdateUniformBuffer(mGlobalUniformBuffer, sizeof(GlobalUniform), (uint64_t)mImageIndex, &mGlobalUniform);
 }
 
 void Renderer::Draw()
 {
 	if (!mCanRender) return;
-	VkSemaphore imgAcq = mFrameResources[mImageIndex].ImageAcquired;
-	VK_CHECK(vkAcquireNextImageKHR(
-		mDevice,
-		mSwapchain,
-		UINT64_MAX,
-		imgAcq,
-		nullptr,
-		&mImageIndex
-	));
 
 	VkFence fence = mFrameResources[mImageIndex].Fence;
 	VkSemaphore imgPrst = mFrameResources[mImageIndex].ImagePresented;
@@ -273,30 +285,37 @@ void Renderer::Draw()
 
 	vkCmdBeginRenderPass(cmdBuf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	VkDescriptorSet descriptorSets[] =
-	{
-		mFrameResources[mImageIndex].GlobalDescriptorSet,
-		mFrameResources[mImageIndex].ObjectDescriptorSet
-	};
-
-	vkCmdBindDescriptorSets(
-		cmdBuf,
-		VK_PIPELINE_BIND_POINT_GRAPHICS,
-		mPipelineLayout,
-		0u,
-		(uint32_t)std::size(descriptorSets),
-		descriptorSets,
-		0u,
-		nullptr
-	);
-
-	VkDeviceSize vOffset = 0;
-	vkCmdBindVertexBuffers(cmdBuf, 0u, 1u, &mVertexBuffer.buffer, &vOffset);
-	vkCmdBindIndexBuffer(cmdBuf, mIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 	vkCmdSetViewport(cmdBuf, 0u, 1u, &mViewport);
 	vkCmdSetScissor(cmdBuf, 0u, 1u, &mScissor);
+
 	vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, mGraphicsPipeline);
-	vkCmdDrawIndexed(cmdBuf, mIndexCount, 1u, 0u, 0u, 0u);
+
+	for (size_t i = 0; i < mRenderItems.size(); i++) {
+		RenderItem& rItem = mRenderItems[i];
+
+		VkDescriptorSet descriptorSets[] =
+		{
+			mFrameResources[mImageIndex].GlobalDescriptorSet,
+			mFrameResources[mImageIndex].ObjectDescriptorSet[i]
+		};
+
+		vkCmdBindDescriptorSets(
+			cmdBuf,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			mPipelineLayout,
+			0u,
+			(uint32_t)std::size(descriptorSets),
+			descriptorSets,
+			0u,
+			nullptr
+		);
+
+		VkDeviceSize s = 0;
+		vkCmdBindVertexBuffers(cmdBuf, 0u, 1u, &rItem.MeshGeo->VertexBuffer.buffer, &s);
+		vkCmdBindIndexBuffer(cmdBuf, rItem.MeshGeo->IndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(cmdBuf, rItem.indexCount, 1u, rItem.firstIndex, rItem.vertexOffset, 0u);
+	}
+
 	vkCmdEndRenderPass(cmdBuf);
 	vkEndCommandBuffer(cmdBuf);
 
@@ -304,7 +323,7 @@ void Renderer::Draw()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.pNext = nullptr;
 	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &imgAcq;
+	submitInfo.pWaitSemaphores = &mImgAcq;
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &imgPrst;
 	VkPipelineStageFlags stageFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -710,7 +729,7 @@ VkSwapchainKHR Renderer::CreateSwapchain(VkSurfaceFormatKHR& out_swapchainSurfac
 		&surfaceCapabilities
 	));
 
-	uint32_t imageCount = surfaceCapabilities.minImageCount;
+	uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
 	// Some AMD drivers are quite weird, gonna take a better look at it in the future.
 	if (imageCount > surfaceCapabilities.maxImageCount)
 	{
@@ -1583,7 +1602,7 @@ Buffer Renderer::CreateUniformBuffer(uint64_t bufferSize) const
 
 	VkMemoryRequirements requirements;
 	vkGetBufferMemoryRequirements(mDevice, buffer.buffer, &requirements);
-	buffer.size = requirements.size;
+	buffer.size = static_cast<uint32_t>(requirements.size);
 
 	VkMemoryAllocateInfo allocateInfo;
 	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -1616,9 +1635,57 @@ VkDescriptorSet Renderer::CreateDescriptorSet() const
 	return descriptorSet;
 }
 
-void Renderer::DestroyBuffer(Buffer& buffer) const
+MeshGeometry Renderer::CreateMeshGeometry()
 {
-	vkFreeMemory(mDevice, buffer.memory, nullptr);
-	vkDestroyBuffer(mDevice, buffer.buffer, nullptr);
-	memset(&buffer, 0, sizeof(Buffer));
+	MeshGeometry meshGeometry{};
+	
+	VertexBufferModel vertexBuffer[] =
+	{
+		{ {  0.0f,  0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ {  0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		{ { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
+
+		{ {  0.5f,  0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		{ { -0.5f,  0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+	};
+
+	uint32_t indexBuffer[] =
+	{
+		0, 1, 2,
+
+		1, 2, 4, 1, 4, 3
+	};
+
+	meshGeometry.Geometries["Triangle"].indexCount = 3;
+	meshGeometry.Geometries["Triangle"].firstIndex = 0;
+	meshGeometry.Geometries["Triangle"].vertexOffset = 0;
+
+	meshGeometry.Geometries["Square"].indexCount = 6;
+	meshGeometry.Geometries["Square"].firstIndex = 3;
+	meshGeometry.Geometries["Square"].vertexOffset = 0;
+
+	meshGeometry.VertexBuffer = CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(vertexBuffer), false);
+	BindBuffer(meshGeometry.VertexBuffer);
+	
+	Buffer upBuf = CreateUploadBuffer(sizeof(vertexBuffer));
+	BindBuffer(upBuf);
+	UploadToBuffer(meshGeometry.VertexBuffer, upBuf, vertexBuffer, upBuf.size);
+	DestroyBuffer(&upBuf);
+	
+	meshGeometry.IndexBuffer = CreateBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, sizeof(indexBuffer), false);
+	BindBuffer(meshGeometry.IndexBuffer);
+
+	upBuf = CreateUploadBuffer(sizeof(indexBuffer));
+	BindBuffer(upBuf);
+	UploadToBuffer(meshGeometry.IndexBuffer, upBuf, indexBuffer, upBuf.size);
+	DestroyBuffer(&upBuf);
+
+	return meshGeometry;
+}
+
+void Renderer::DestroyBuffer(Buffer* buffer) const
+{
+	vkFreeMemory(mDevice, buffer->memory, nullptr);
+	vkDestroyBuffer(mDevice, buffer->buffer, nullptr);
+	ZeroMemory(buffer, sizeof(*buffer));
 }

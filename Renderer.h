@@ -5,6 +5,8 @@
 #include "EngineException.h"
 #include "Timer.h"
 #include <DirectXMath.h>
+#include "MeshGeometry.h"
+#include "RenderItem.h"
 
 #define VK_CHECK(expr) { if ((expr)) { throw EngineException(__FILE__, __LINE__, #expr); } }
 
@@ -60,9 +62,10 @@ private:
 	void UploadToBuffer(Buffer& destinationBuffer, Buffer& uploadBuffer, const void* data, VkDeviceSize bufferSize);
 	void BindBuffer(const Buffer& buffer, VkDeviceSize offset) const;
 	inline void BindBuffer(const Buffer& buffer) const { BindBuffer(buffer, 0); }
-	void DestroyBuffer(Buffer& buffer) const;
+	void DestroyBuffer(Buffer* buffer) const;
 	Buffer CreateUniformBuffer(uint64_t bufferSize) const;
 	VkDescriptorSet CreateDescriptorSet() const;
+	MeshGeometry CreateMeshGeometry();
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
@@ -109,11 +112,6 @@ private:
 	VkViewport mViewport = {};
 	VkRect2D mScissor = {};
 
-	Buffer mVertexBuffer;
-	Buffer mIndexBuffer;
-
-	uint32_t mIndexCount = 0;
-
 	VkDescriptorPool mGlobalDescriptorPool = nullptr;
 	VkDescriptorSetLayout mGlobalDescriptorSetLayout = nullptr;
 	GlobalUniform mGlobalUniform{};
@@ -121,4 +119,8 @@ private:
 
 	VkPipelineLayout mPipelineLayout = nullptr;
 	VkPipeline mGraphicsPipeline = nullptr;
+
+	MeshGeometry mMeshGeometry;
+	std::vector<RenderItem> mRenderItems;
+	VkSemaphore mImgAcq = nullptr;
 };
