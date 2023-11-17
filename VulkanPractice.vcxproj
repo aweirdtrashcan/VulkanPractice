@@ -152,6 +152,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="EngineException.h" />
+    <ClInclude Include="GeometryGenerator.h" />
     <ClInclude Include="HelperStructs.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="MeshGeometry.h" />
@@ -163,6 +164,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="EngineException.cpp" />
+    <ClCompile Include="GeometryGenerator.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MeshGeometry.cpp" />
     <ClCompile Include="Renderer.cpp" />

@@ -50,15 +50,24 @@ struct FrameResources
 
 struct GlobalUniform 
 {
-	DirectX::XMFLOAT4X4 projection;
 	DirectX::XMFLOAT4X4 view;
-	DirectX::XMFLOAT4X4 tempModel;
+	DirectX::XMFLOAT4X4 invView;
+	DirectX::XMFLOAT4X4 projection;
+	DirectX::XMFLOAT4X4 invProjection;
+	DirectX::XMFLOAT4X4 viewProj;
+	DirectX::XMFLOAT4X4 invViewProj;
+	DirectX::XMFLOAT3 eyePosW;
+	float perObjectPad1;
+	DirectX::XMFLOAT2 renderTargetSize;
+	float nearZ;
+	float farZ;
+	float totalTime;
+	float deltaTime;
 };
 
 struct SingleObjectUniform 
 {
 	DirectX::XMFLOAT4X4 model;
-	DirectX::XMFLOAT4X4 mvp;
 };
 
 inline constexpr uint64_t CalculateUniformBufferSize(uint64_t bufferSize) { return (bufferSize + 255) & ~255; }

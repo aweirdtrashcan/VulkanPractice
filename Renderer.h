@@ -7,6 +7,7 @@
 #include <DirectXMath.h>
 #include "MeshGeometry.h"
 #include "RenderItem.h"
+#include "GeometryGenerator.h"
 
 #define VK_CHECK(expr) { if ((expr)) { throw EngineException(__FILE__, __LINE__, #expr); } }
 
@@ -66,6 +67,7 @@ private:
 	Buffer CreateUniformBuffer(uint64_t bufferSize) const;
 	VkDescriptorSet CreateDescriptorSet() const;
 	MeshGeometry CreateMeshGeometry();
+	void UpdateGlobalUniformData(GlobalUniform& globalUniform) const;
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
@@ -75,6 +77,7 @@ private:
 
 	double mAccumulatedDelta = 0.0;
 	int mFps = 0;
+	float mDeltaTime = 0.0f;
 
 	const Window* mWindow;
 	VkInstance mInstance = nullptr;
@@ -116,6 +119,7 @@ private:
 	VkDescriptorSetLayout mGlobalDescriptorSetLayout = nullptr;
 	GlobalUniform mGlobalUniform{};
 	Buffer mGlobalUniformBuffer;
+	Buffer mObjectUniformBuffer;
 
 	VkPipelineLayout mPipelineLayout = nullptr;
 	VkPipeline mGraphicsPipeline = nullptr;
