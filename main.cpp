@@ -17,11 +17,11 @@ int main(void)
 			window.Render();
 		}
 	}
-	catch (const EngineException& e)
+	catch (const EngineException  e)
 	{
 		MessageBoxA(nullptr, e.what(), e.GetType(), MB_OK | MB_ICONEXCLAMATION);
 	}
-	catch (const std::exception& e)
+	catch (const std::exception e)
 	{
 		MessageBoxA(nullptr, e.what(), "Error", MB_OK | MB_ICONEXCLAMATION);
 	}

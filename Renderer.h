@@ -49,6 +49,7 @@ private:
 	VkSwapchainKHR CreateSwapchain(VkSurfaceFormatKHR& out_swapchainSurfaceFormat) const;
 	uint32_t GetSwapchainImagesCount() const;
 	std::vector<VkImage> GetSwapchainImages(uint32_t imageCount) const;
+	Image CreateDepthBuffer() const;
 	VkImageView CreateImageView(VkFormat viewFormat, VkImage image, VkImageAspectFlags imageAspect) const;
 	VkShaderModule CreateShaderModule(const char* shaderPath) const;
 	VkRenderPass CreateRenderPass() const;
@@ -106,6 +107,8 @@ private:
 	VkSemaphore mMainCopyDoneSemaphore = nullptr;
 
 	uint32_t mImageIndex = 0;
+
+	Image mDepthBuffer{};
 
 	VkSurfaceKHR mSurface = nullptr;
 	VkSwapchainKHR mSwapchain = nullptr;

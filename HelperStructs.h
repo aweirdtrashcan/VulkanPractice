@@ -70,4 +70,11 @@ struct SingleObjectUniform
 	DirectX::XMFLOAT4X4 model;
 };
 
+struct Image
+{
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView imageView;
+};
+
 inline constexpr uint64_t CalculateUniformBufferSize(uint64_t bufferSize) { return (bufferSize + 255) & ~255; }
