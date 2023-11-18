@@ -4,6 +4,8 @@
 
 #include "Renderer.h"
 
+#include <windowsx.h>
+
 Window::Window(const wchar_t* name, int _width, int _height)
 	:
 	mWindowName(name),
@@ -215,10 +217,10 @@ LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 	case WM_LBUTTONUP:
 	case WM_MBUTTONUP:
 	case WM_RBUTTONUP:
-		//OnMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+		//mRenderer->OnMouseUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 		return 0;
 	case WM_MOUSEMOVE:
-		//OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+		mRenderer->OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
 		return 0;
 	case WM_KEYUP:
 		if (wParam == VK_ESCAPE)
@@ -233,10 +235,11 @@ LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		{
 			mRenderer->ToggleVSync();
 		}
-		//else if (wParam == VK_SPACE)
-		//{
-		//	mRenderer->spacePressed = !mRenderer->spacePressed;
-		//}
+		mRenderer->OnKeyReleased(wParam);
+		return 0;
+	case WM_KEYDOWN:
+		mRenderer->OnKeyDown(wParam);
+		return 0;
 
 		return 0;
 	}

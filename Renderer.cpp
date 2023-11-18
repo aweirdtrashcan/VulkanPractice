@@ -97,21 +97,7 @@ Renderer::Renderer(const Window* window)
 
 	mMeshGeometry = CreateMeshGeometry();
 
-	RenderItem cylinder;
-	cylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
-	cylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
-	cylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
-	cylinder.MeshGeo = &mMeshGeometry;
-	cylinder.UniformBuffer.model = XMFLOAT4X4();
-	mRenderItems.push_back(cylinder);
-
-	RenderItem geoSphere;
-	geoSphere.firstIndex = mMeshGeometry.Geometries["GeoSphere"].firstIndex;
-	geoSphere.indexCount = mMeshGeometry.Geometries["GeoSphere"].indexCount;
-	geoSphere.vertexOffset = mMeshGeometry.Geometries["GeoSphere"].vertexOffset;
-	geoSphere.MeshGeo = &mMeshGeometry;
-	geoSphere.UniformBuffer.model = XMFLOAT4X4();
-	mRenderItems.push_back(geoSphere);
+	BuildRenderItems();
 
 	uint64_t renderItemCount = mRenderItems.size();
 
@@ -134,6 +120,79 @@ Renderer::Renderer(const Window* window)
 
 	mPipelineLayout = CreatePipelineLayout();
 	mGraphicsPipeline = CreateVulkanPipeline();
+}
+
+void Renderer::BuildRenderItems()
+{
+	mRenderItems.resize(22);
+	uint32_t uniformBufferIndex = 0;
+	RenderItem box;
+	box.MeshGeo = &mMeshGeometry;
+	box.firstIndex = mMeshGeometry.Geometries["Box"].firstIndex;
+	box.indexCount = mMeshGeometry.Geometries["Box"].indexCount;
+	box.vertexOffset = mMeshGeometry.Geometries["Box"].vertexOffset;
+	box.uniformBufferIndex = uniformBufferIndex++;
+	XMStoreFloat4x4(&box.UniformBuffer.model, XMMatrixTranslation(0.0f, 0.5f, 0.0f));
+	mRenderItems[box.uniformBufferIndex] = box;
+
+	RenderItem grid;
+	grid.firstIndex = mMeshGeometry.Geometries["Grid"].firstIndex;
+	grid.indexCount = mMeshGeometry.Geometries["Grid"].indexCount;
+	grid.vertexOffset = mMeshGeometry.Geometries["Grid"].vertexOffset;
+	grid.MeshGeo = &mMeshGeometry;
+	XMStoreFloat4x4(&grid.UniformBuffer.model, XMMatrixIdentity());
+	grid.uniformBufferIndex = uniformBufferIndex++;
+	mRenderItems[grid.uniformBufferIndex] = grid;
+
+	// Build the columns and the spheres in rows.
+	for (int i = 0; i < 5; i++)
+	{
+		RenderItem leftCylinder;
+		RenderItem rightCylinder;
+		RenderItem leftSphere;
+		RenderItem rightSphere;
+
+		XMMATRIX leftCylinderModel = XMMatrixTranslation(-5.0f, 1.5f, -10.f + i * 5.0f);
+		XMMATRIX rightCylinderModel = XMMatrixTranslation(5.0f, 1.5f, -10.f + i * 5.0f);
+		
+		XMMATRIX leftSphereModel = XMMatrixTranslation(-5.0f, 3.5f, -10.f + i * 5.0f);
+		XMMATRIX rightSphereModel = XMMatrixTranslation(5.0f, 3.5f, -10.f + i * 5.0f);
+
+		XMStoreFloat4x4(&leftCylinder.UniformBuffer.model, leftCylinderModel);
+		XMStoreFloat4x4(&rightCylinder.UniformBuffer.model, rightCylinderModel);
+
+		XMStoreFloat4x4(&leftSphere.UniformBuffer.model, leftSphereModel);
+		XMStoreFloat4x4(&rightSphere.UniformBuffer.model, rightSphereModel);
+
+		leftCylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
+		leftCylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
+		leftCylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
+		leftCylinder.MeshGeo = &mMeshGeometry;
+		leftCylinder.uniformBufferIndex = uniformBufferIndex++;
+
+		rightCylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
+		rightCylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
+		rightCylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
+		rightCylinder.MeshGeo = &mMeshGeometry;
+		rightCylinder.uniformBufferIndex = uniformBufferIndex++;
+
+		leftSphere.firstIndex = mMeshGeometry.Geometries["Sphere"].firstIndex;
+		leftSphere.indexCount = mMeshGeometry.Geometries["Sphere"].indexCount;
+		leftSphere.vertexOffset = mMeshGeometry.Geometries["Sphere"].vertexOffset;
+		leftSphere.MeshGeo = &mMeshGeometry;
+		leftSphere.uniformBufferIndex = uniformBufferIndex++;
+
+		rightSphere.firstIndex = mMeshGeometry.Geometries["Sphere"].firstIndex;
+		rightSphere.indexCount = mMeshGeometry.Geometries["Sphere"].indexCount;
+		rightSphere.vertexOffset = mMeshGeometry.Geometries["Sphere"].vertexOffset;
+		rightSphere.MeshGeo = &mMeshGeometry;
+		rightSphere.uniformBufferIndex = uniformBufferIndex++;
+
+		mRenderItems[leftCylinder.uniformBufferIndex] = leftCylinder;
+		mRenderItems[rightCylinder.uniformBufferIndex] = rightCylinder;
+		mRenderItems[leftSphere.uniformBufferIndex] = leftSphere;
+		mRenderItems[rightSphere.uniformBufferIndex] = rightSphere;
+	}
 }
 
 Renderer::~Renderer()
@@ -189,17 +248,13 @@ void Renderer::Update()
 		&mImageIndex
 	));
 
-	mDeltaTime = mTimer.GetDelta();
-	mAccumulatedDelta += mDeltaTime;
-	mFps++;
-	if (mAccumulatedDelta >= 1.0)
-	{
-		char fpsString[50];
-		snprintf(fpsString, sizeof(fpsString), "Vulkan Application | FPS: %d", mFps);
-		mWindow->ChangeWindowTitle(fpsString);
-		mAccumulatedDelta = 0.0;
-		mFps = 0;
-	}
+	CalculateDeltaTime();
+
+	float _x = mRadius * sinf(mPhi) * cosf(mTheta);
+	float _y = mRadius * cosf(mPhi);
+	float _z = mRadius * sinf(mPhi) * sinf(mTheta);
+
+	mEyePosition = XMVectorSet(_x, _y, _z, 1.0f);
 
 	float pos[] = { -5.0f, 5.0f };
 
@@ -210,21 +265,15 @@ void Renderer::Update()
 
 	rotation += 2.0f * (float)mDeltaTime;
 
-	for (size_t i = 0; i < mRenderItems.size(); i++) {
-		/* Will be changed... just testing */
-		XMMATRIX model = XMMatrixRotationY(rotation) * XMMatrixTranslation(pos[i], 0.0f, 10.0f);
-		XMStoreFloat4x4(&mRenderItems[i].UniformBuffer.model, model);
-		mRenderItems[i].updated = true;
-
-		if (mRenderItems[i].updated)
-		{
-			UpdateUniformBuffer(*mFrameResources[mImageIndex].ObjectUniformBuffer, sizeof(SingleObjectUniform), (uint64_t)mImageIndex * mRenderItems.size() + i, &mRenderItems[i].UniformBuffer);
-			mRenderItems[i].updated = false;
-		}
+	for (RenderItem& rItem : mRenderItems) 
+	{
+		const Buffer& UB = *mFrameResources[mImageIndex].ObjectUniformBuffer;
+		uint64_t frameOffset = (uint64_t)mImageIndex * mRenderItems.size();
+		UpdateUniformBuffer(UB, sizeof(SingleObjectUniform), frameOffset + rItem.uniformBufferIndex, &rItem.UniformBuffer);
 	}
-
 	UpdateGlobalUniformData(mGlobalUniform);
 	UpdateUniformBuffer(mGlobalUniformBuffer, sizeof(GlobalUniform), (uint64_t)mImageIndex, &mGlobalUniform);
+	//printf("End frame %u\n", mImageIndex);
 }
 
 void Renderer::Draw()
@@ -330,6 +379,36 @@ void Renderer::Draw()
 	presentInfo.pImageIndices = &mImageIndex;
 	presentInfo.pResults = 0;
 	VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &presentInfo));
+}
+
+void Renderer::OnKeyReleased(int key)
+{
+}
+
+void Renderer::OnKeyDown(int key)
+{
+	float radiusDelta = 500.f * mDeltaTime;
+	if (key == 'W')
+		mRadius -= radiusDelta;
+	else if (key == 'S')
+		mRadius += radiusDelta;
+}
+
+void Renderer::OnMouseMove(uint64_t wParam, int x, int y)
+{
+	float dx = XMConvertToRadians(0.25f * (float)(x - mLastMousePos.x));
+	float dy = XMConvertToRadians(0.25f * (float)(y - mLastMousePos.y));
+
+	mTheta += dx;
+	mPhi += dy;
+
+	//if (mPhi > XM_PI - 0.1f)
+	//	mPhi = XM_PI - 0.1f;
+	//else if (mPhi < 0.1f)
+	//	mPhi = 0.1f;
+
+	mLastMousePos.x = x;
+	mLastMousePos.y = y;
 }
 
 VkInstance Renderer::CreateVulkanInstance() const
@@ -1088,6 +1167,7 @@ std::vector<VkDescriptorSet> Renderer::AllocateGlobalDescriptorSets() const
 void Renderer::UpdateUniformBuffer(Buffer buffer, uint64_t bufferStride, uint64_t offset, void* data) const
 {
 	bufferStride = CalculateUniformBufferSize(bufferStride);
+	//printf("Updating index %I64u\n", offset);
 	void* mapped = nullptr;
 	VK_CHECK(vkMapMemory(mDevice, buffer.memory, offset * bufferStride, bufferStride, 0, &mapped));
 	memcpy(mapped, data, bufferStride);
@@ -1279,7 +1359,7 @@ VkPipeline Renderer::CreateVulkanPipeline() const
 	rsCreateInfo.flags = 0;
 	rsCreateInfo.depthClampEnable = VK_FALSE;
 	rsCreateInfo.rasterizerDiscardEnable = VK_FALSE;
-	rsCreateInfo.polygonMode = VK_POLYGON_MODE_LINE;
+	rsCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
 	rsCreateInfo.cullMode = VK_CULL_MODE_NONE;
 	rsCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rsCreateInfo.depthBiasEnable = VK_FALSE;
@@ -1653,8 +1733,8 @@ MeshGeometry Renderer::CreateMeshGeometry()
 	
 	GeometryGenerator geoGen;
 
-	GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(4.f, 0.5f, 8.f, 8, 4);
-	GeometryGenerator::MeshData geoSphere = geoGen.CreateGeosphere(3.f, 2);
+	GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
+	GeometryGenerator::MeshData geoSphere = geoGen.CreateSphere(0.5f, 20, 20);
 	GeometryGenerator::MeshData grid = geoGen.CreateGrid(20.f, 30.f, 60, 40);
 	GeometryGenerator::MeshData box = geoGen.CreateBox(1.5f, 0.5f, 1.5f, 3);
 
@@ -1688,7 +1768,7 @@ MeshGeometry Renderer::CreateMeshGeometry()
 	for (size_t i = 0; i < box.Vertices.size(); i++, k++)
 	{
 		vertices[k] = box.Vertices[i];
-		vertices[k].Color = XMFLOAT4(0.0f, 0.3f, 0.4f, 1.0f);
+		vertices[k].Color = XMFLOAT4(1.0f, 0.3f, 0.4f, 1.0f);
 	}
 
 	indices.insert(std::end(indices), std::begin(cylinder.Indices32), std::end(cylinder.Indices32));
@@ -1736,7 +1816,7 @@ MeshGeometry Renderer::CreateMeshGeometry()
 	boxSubmesh.vertexOffset = static_cast<uint32_t>(cylinder.Vertices.size() + geoSphere.Vertices.size() + grid.Vertices.size());
 
 	meshGeometry.Geometries["Cylinder"] = cylinderSubmesh;
-	meshGeometry.Geometries["GeoSphere"] = geoSphereSubmesh;
+	meshGeometry.Geometries["Sphere"] = geoSphereSubmesh;
 	meshGeometry.Geometries["Grid"] = gridSubmesh;
 	meshGeometry.Geometries["Box"] = boxSubmesh;
 
@@ -1746,11 +1826,10 @@ MeshGeometry Renderer::CreateMeshGeometry()
 void Renderer::UpdateGlobalUniformData(GlobalUniform& globalUniform) const
 {
 	/* View */
-	XMVECTOR eye = { 0.0f, 0.0f, -3.0f, 0.0f };
 	XMVECTOR center = { 0.0f, 0.0f, 0.0f, 0.0f };
 	XMVECTOR up = { 0.0f, 1.0f, 0.0f, 0.0f };
 
-	XMMATRIX view = XMMatrixLookAtLH(eye, center, up);
+	XMMATRIX view = XMMatrixLookAtLH(mEyePosition, center, up);
 
 	/* Projection */
 	float width = (float)mWindow->GetWindowWidth();
@@ -1777,7 +1856,7 @@ void Renderer::UpdateGlobalUniformData(GlobalUniform& globalUniform) const
 	XMStoreFloat4x4(&globalUniform.viewProj, viewProj);
 	XMStoreFloat4x4(&globalUniform.invViewProj, invViewProj);
 	
-	XMStoreFloat3(&globalUniform.eyePosW, eye);
+	XMStoreFloat3(&globalUniform.eyePosW, mEyePosition);
 
 	globalUniform.renderTargetSize.x = width;
 	globalUniform.renderTargetSize.x = height;
@@ -1786,6 +1865,21 @@ void Renderer::UpdateGlobalUniformData(GlobalUniform& globalUniform) const
 
 	globalUniform.totalTime = (float)mTimer.PeekTime();
 	globalUniform.deltaTime = mDeltaTime;
+}
+
+void Renderer::CalculateDeltaTime()
+{
+	mDeltaTime = mTimer.GetDelta();
+	mAccumulatedDelta += mDeltaTime;
+	mFps++;
+	if (mAccumulatedDelta >= 1.0)
+	{
+		char fpsString[50];
+		snprintf(fpsString, sizeof(fpsString), "Vulkan Application | FPS: %d", mFps);
+		mWindow->ChangeWindowTitle(fpsString);
+		mAccumulatedDelta = 0.0;
+		mFps = 0;
+	}
 }
 
 void Renderer::DestroyBuffer(Buffer* buffer) const

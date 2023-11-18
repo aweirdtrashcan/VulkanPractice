@@ -17,6 +17,7 @@ class Renderer
 {
 public:
 	Renderer(const Window* window);
+	void BuildRenderItems();
 	~Renderer();
 	
 	void StopRender() {};
@@ -25,6 +26,11 @@ public:
 
 	void Update();
 	void Draw();
+
+	void OnKeyReleased(int key);
+	void OnKeyDown(int key);
+
+	void OnMouseMove(uint64_t wParam, int x, int y);
 
 	void WaitForDeviceIdle()
 	{
@@ -68,6 +74,7 @@ private:
 	VkDescriptorSet CreateDescriptorSet() const;
 	MeshGeometry CreateMeshGeometry();
 	void UpdateGlobalUniformData(GlobalUniform& globalUniform) const;
+	void CalculateDeltaTime();
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
@@ -127,4 +134,10 @@ private:
 	MeshGeometry mMeshGeometry;
 	std::vector<RenderItem> mRenderItems;
 	VkSemaphore mImgAcq = nullptr;
+
+	DirectX::XMVECTOR mEyePosition;
+	DirectX::XMFLOAT2 mLastMousePos{};
+	float mTheta = 0.0f;
+	float mPhi = 0.0f;
+	float mRadius = 10.f;
 };

@@ -13,6 +13,8 @@ struct RenderItem
 
 	bool updated = false;
 
+	uint32_t uniformBufferIndex;
+
 	uint32_t indexCount;
 	uint32_t firstIndex;
 	uint32_t vertexOffset;
