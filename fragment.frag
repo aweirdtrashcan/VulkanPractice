@@ -8,5 +8,5 @@ layout(location = 0) out vec4 outColor;
 void main()
 {
 	outColor = inColor;
-	debugPrintfEXT("frag: %f %f %f %f\n", inColor.x, inColor.y, inColor.z, inColor.z);
+	//debugPrintfEXT("frag: %f %f %f %f\n", inColor.x, inColor.y, inColor.z, inColor.z);
 }

@@ -20,7 +20,7 @@ struct VkDeviceInfo
 	uint32_t transferQueueIndex;
 };
 
-struct VertexBufferModel
+struct Vertex
 {
 	DirectX::XMFLOAT3 pos;
 	DirectX::XMFLOAT4 color;

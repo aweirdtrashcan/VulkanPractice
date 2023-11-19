@@ -17,4 +17,3 @@ struct MeshGeometry
 	Buffer VertexBuffer;
 	Buffer IndexBuffer;
 };
-

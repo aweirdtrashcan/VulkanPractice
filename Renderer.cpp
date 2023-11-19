@@ -40,14 +40,14 @@ Renderer::Renderer(const Window* window)
 	mInstance = CreateVulkanInstance();
 	mDebugMessenger = CreateVulkanMessenger();
 	mPhysicalDevice = ChoosePhysicalDevice();
-	VkDeviceInfo deviceInfo = CreateLogicalDevice();
-	mDevice = deviceInfo.device;
-	mGraphicsQueueIndex = deviceInfo.graphicsQueueIndex;
-	vkGetDeviceQueue(mDevice, deviceInfo.graphicsQueueIndex, 0, &mGraphicsQueue);
-	vkGetDeviceQueue(mDevice, deviceInfo.transferQueueIndex, 0, &mTransferQueue);
-	mMainCmdPool = CreateCommandPool(deviceInfo.graphicsQueueIndex);
+	mDeviceInfo = CreateLogicalDevice();
+	mDevice = mDeviceInfo.device;
+	mGraphicsQueueIndex = mDeviceInfo.graphicsQueueIndex;
+	vkGetDeviceQueue(mDevice, mDeviceInfo.graphicsQueueIndex, 0, &mGraphicsQueue);
+	vkGetDeviceQueue(mDevice, mDeviceInfo.transferQueueIndex, 0, &mTransferQueue);
+	mMainCmdPool = CreateCommandPool(mDeviceInfo.graphicsQueueIndex);
 	mMainCmd = AllocateCommandBuffer(mMainCmdPool);
-	mMainTransferCmdPool = CreateCommandPool(deviceInfo.transferQueueIndex);
+	mMainTransferCmdPool = CreateCommandPool(mDeviceInfo.transferQueueIndex);
 	mMainTransferCmd = AllocateCommandBuffer(mMainTransferCmdPool);
 	mSurface = CreateVulkanSurface();
 	mSwapchain = CreateSwapchain(mSwapchainSurfaceFormat);
@@ -65,7 +65,7 @@ Renderer::Renderer(const Window* window)
 		frameRes.ImageAcquired = CreateSemaphore();
 		frameRes.ImagePresented = CreateSemaphore();
 		frameRes.Fence = CreateVulkanFence();
-		frameRes.CommandPool = CreateCommandPool(deviceInfo.graphicsQueueIndex);
+		frameRes.CommandPool = CreateCommandPool(mDeviceInfo.graphicsQueueIndex);
 		frameRes.CommandBuffer = AllocateCommandBuffer(frameRes.CommandPool);
 		VkImageView imgViews[] = { imgView, mDepthBuffer.imageView };
 		frameRes.Framebuffer = CreateFramebuffer(mRenderpass, 2, imgViews, mWindow->GetWindowWidth(), mWindow->GetWindowHeight());
@@ -240,17 +240,80 @@ Renderer::~Renderer()
 	printf("%s\n", "Goodbyeeeeee =)");
 }
 
+void Renderer::NotifyWindowResize(int width, int height)
+{
+	if (!this) return;
+	vkDeviceWaitIdle(mDevice);
+	for (uint32_t i = 0; i < mImageCount; i++)
+	{
+		// Destroy frame resources
+		vkDestroySemaphore(mDevice, mFrameResources[i].ImageAcquired, nullptr);
+		vkDestroySemaphore(mDevice, mFrameResources[i].ImagePresented, nullptr);
+		vkDestroyFence(mDevice, mFrameResources[i].Fence, nullptr);
+		vkFreeCommandBuffers(mDevice, mFrameResources[i].CommandPool, 1u, &mFrameResources[i].CommandBuffer);
+		vkDestroyCommandPool(mDevice, mFrameResources[i].CommandPool, nullptr);
+		vkDestroyFramebuffer(mDevice, mFrameResources[i].Framebuffer, nullptr);
+		memset(&mFrameResources[i], 0, sizeof(mFrameResources[i]));
+	}
+	vkDestroyRenderPass(mDevice, mRenderpass, nullptr);
+	vkDestroyImageView(mDevice, mDepthBuffer.imageView, nullptr);
+	vkFreeMemory(mDevice, mDepthBuffer.memory, nullptr);
+	vkDestroyImage(mDevice, mDepthBuffer.image, nullptr);
+	vkDestroySwapchainKHR(mDevice, mSwapchain, nullptr);
+
+	mSwapchain = CreateSwapchain(mSwapchainSurfaceFormat);
+	mImageCount = GetSwapchainImagesCount();
+	mImages = GetSwapchainImages(mImageCount);
+	mDepthBuffer = CreateDepthBuffer();
+	mRenderpass = CreateRenderPass();
+
+	for (VkImage image : mImages)
+	{
+		VkImageView imgView = CreateImageView(mSwapchainSurfaceFormat.format, image, VK_IMAGE_ASPECT_COLOR_BIT);
+		mImageViews.push_back(imgView);
+
+		FrameResources frameRes;
+		frameRes.ImageAcquired = CreateSemaphore();
+		frameRes.ImagePresented = CreateSemaphore();
+		frameRes.Fence = CreateVulkanFence();
+		frameRes.CommandPool = CreateCommandPool(mDeviceInfo.graphicsQueueIndex);
+		frameRes.CommandBuffer = AllocateCommandBuffer(frameRes.CommandPool);
+		VkImageView imgViews[] = { imgView, mDepthBuffer.imageView };
+		frameRes.Framebuffer = CreateFramebuffer(mRenderpass, 2, imgViews, mWindow->GetWindowWidth(), mWindow->GetWindowHeight());
+		mFrameResources.push_back(frameRes);
+	}
+
+	VkSurfaceCapabilitiesKHR surfaceCapabilities;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+		mPhysicalDevice.physicalDevice,
+		mSurface,
+		&surfaceCapabilities
+	));
+
+	mViewport.minDepth = 0.0f;
+	mViewport.maxDepth = 1.0f;
+	mViewport.width = static_cast<float>(surfaceCapabilities.currentExtent.width);
+	mViewport.height = -static_cast<float>(surfaceCapabilities.currentExtent.height);
+	mViewport.x = 0.0f;
+	mViewport.y = static_cast<float>(surfaceCapabilities.currentExtent.height);
+
+	mScissor.extent = surfaceCapabilities.currentExtent;
+	mScissor.offset = { 0, 0 };
+}
+
 void Renderer::Update()
 {
-	if (!mCanRender) return;
-	mImgAcq = mFrameResources[mImageIndex].ImageAcquired;
+	VkSemaphore imgAcq = mFrameResources[mCurrentImageIndex].ImageAcquired;
+	
+	VK_CHECK(vkWaitForFences(mDevice, 1u, &mFrameResources[mCurrentImageIndex].Fence, VK_TRUE, UINT64_MAX));
+
 	VK_CHECK(vkAcquireNextImageKHR(
 		mDevice,
 		mSwapchain,
 		UINT64_MAX,
-		mImgAcq,
+		imgAcq,
 		nullptr,
-		&mImageIndex
+		&mNextImageIndex
 	));
 
 	CalculateDeltaTime();
@@ -272,26 +335,23 @@ void Renderer::Update()
 
 	for (RenderItem& rItem : mRenderItems) 
 	{
-		const Buffer& UB = *mFrameResources[mImageIndex].ObjectUniformBuffer;
-		uint64_t frameOffset = (uint64_t)mImageIndex * mRenderItems.size();
+		const Buffer& UB = *mFrameResources[mCurrentImageIndex].ObjectUniformBuffer;
+		uint64_t frameOffset = (uint64_t)mCurrentImageIndex * mRenderItems.size();
 		UpdateUniformBuffer(UB, sizeof(SingleObjectUniform), frameOffset + rItem.uniformBufferIndex, &rItem.UniformBuffer);
 	}
 	UpdateGlobalUniformData(mGlobalUniform);
-	UpdateUniformBuffer(mGlobalUniformBuffer, sizeof(GlobalUniform), (uint64_t)mImageIndex, &mGlobalUniform);
+	UpdateUniformBuffer(mGlobalUniformBuffer, sizeof(GlobalUniform), (uint64_t)mCurrentImageIndex, &mGlobalUniform);
 	//printf("End frame %u\n", mImageIndex);
 }
 
 void Renderer::Draw()
 {
-	if (!mCanRender) return;
-
-	VkFence fence = mFrameResources[mImageIndex].Fence;
-	VkSemaphore imgPrst = mFrameResources[mImageIndex].ImagePresented;
-	VkCommandBuffer cmdBuf = mFrameResources[mImageIndex].CommandBuffer;
-	VkCommandPool cmdPool = mFrameResources[mImageIndex].CommandPool;
-	VkFramebuffer frameBuffer = mFrameResources[mImageIndex].Framebuffer;
-
-	VK_CHECK(vkWaitForFences(mDevice, 1u, &fence, VK_TRUE, UINT64_MAX));
+	VkFence fence = mFrameResources[mCurrentImageIndex].Fence;
+	VkSemaphore imgPrst = mFrameResources[mCurrentImageIndex].ImagePresented;
+	VkSemaphore imgAcq = mFrameResources[mCurrentImageIndex].ImageAcquired;
+	VkCommandBuffer cmdBuf = mFrameResources[mCurrentImageIndex].CommandBuffer;
+	VkCommandPool cmdPool = mFrameResources[mCurrentImageIndex].CommandPool;
+	VkFramebuffer frameBuffer = mFrameResources[mCurrentImageIndex].Framebuffer;
 
 	VK_CHECK(vkResetFences(mDevice, 1u, &fence));
 
@@ -308,9 +368,9 @@ void Renderer::Draw()
 	VK_CHECK(vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo));
 
 	VkClearValue clearValues[2];
-	clearValues[0].color.float32[0] = 1.0f;
-	clearValues[0].color.float32[1] = 0.0f;
-	clearValues[0].color.float32[2] = 0.0f;
+	clearValues[0].color.float32[0] = 0.2f;
+	clearValues[0].color.float32[1] = 0.2f;
+	clearValues[0].color.float32[2] = 0.3f;
 	clearValues[0].color.float32[3] = 1.0f;
 
 	clearValues[1].depthStencil.depth = 1.0f;
@@ -340,8 +400,8 @@ void Renderer::Draw()
 
 		VkDescriptorSet descriptorSets[] =
 		{
-			mFrameResources[mImageIndex].GlobalDescriptorSet,
-			mFrameResources[mImageIndex].ObjectDescriptorSet[i]
+			mFrameResources[mCurrentImageIndex].GlobalDescriptorSet,
+			mFrameResources[mCurrentImageIndex].ObjectDescriptorSet[i]
 		};
 
 		vkCmdBindDescriptorSets(
@@ -368,7 +428,7 @@ void Renderer::Draw()
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.pNext = nullptr;
 	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = &mImgAcq;
+	submitInfo.pWaitSemaphores = &imgAcq;
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = &imgPrst;
 	VkPipelineStageFlags stageFlags = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -384,12 +444,14 @@ void Renderer::Draw()
 	presentInfo.swapchainCount = 1;
 	presentInfo.waitSemaphoreCount = 1;
 	presentInfo.pWaitSemaphores = &imgPrst;
-	presentInfo.pImageIndices = &mImageIndex;
+	presentInfo.pImageIndices = &mNextImageIndex;
 	presentInfo.pResults = 0;
 	VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &presentInfo));
+
+	mCurrentImageIndex = (mCurrentImageIndex + 1) % mImageCount;
 }
 
-void Renderer::OnKeyReleased(int key)
+void Renderer::OnKeyUp(int key)
 {
 }
 
@@ -933,7 +995,7 @@ Image Renderer::CreateDepthBuffer() const
 	createInfo.flags = 0;
 	createInfo.imageType = VK_IMAGE_TYPE_2D;
 	createInfo.format = VK_FORMAT_D32_SFLOAT;
-	createInfo.extent.depth = 1.0f;
+	createInfo.extent.depth = 1;
 	createInfo.extent.width = (uint32_t)mWindow->GetWindowWidth();
 	createInfo.extent.height = (uint32_t)mWindow->GetWindowHeight();
 	createInfo.mipLevels = 1;
@@ -1448,7 +1510,7 @@ VkPipeline Renderer::CreateVulkanPipeline() const
 	rsCreateInfo.flags = 0;
 	rsCreateInfo.depthClampEnable = VK_TRUE;
 	rsCreateInfo.rasterizerDiscardEnable = VK_FALSE;
-	rsCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
+	rsCreateInfo.polygonMode = VK_POLYGON_MODE_LINE;
 	rsCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
 	rsCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rsCreateInfo.depthBiasEnable = VK_FALSE;
@@ -1824,7 +1886,7 @@ MeshGeometry Renderer::CreateMeshGeometry()
 
 	GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
 	GeometryGenerator::MeshData geoSphere = geoGen.CreateSphere(0.5f, 20, 20);
-	GeometryGenerator::MeshData grid = geoGen.CreateGrid(20.f, 30.f, 60, 40);
+	GeometryGenerator::MeshData grid = BuildLandGeometry();
 	GeometryGenerator::MeshData box = geoGen.CreateBox(1.5f, 0.5f, 1.5f, 3);
 
 	size_t verticesSize = cylinder.Vertices.size() +
@@ -1845,13 +1907,12 @@ MeshGeometry Renderer::CreateMeshGeometry()
 	for (size_t i = 0; i < geoSphere.Vertices.size(); i++, k++)
 	{
 		vertices[k] = geoSphere.Vertices[i];
-		vertices[k].Color = XMFLOAT4(0.0f, 0.4f, 0.3f, 1.0f);
+		vertices[k].Color = XMFLOAT4(0.2f, 0.2f, 0.6f, 1.0f);
 	}
 
 	for (size_t i = 0; i < grid.Vertices.size(); i++, k++)
 	{
 		vertices[k] = grid.Vertices[i];
-		vertices[k].Color = XMFLOAT4(0.2f, 0.2f, 0.6f, 1.0f);
 	}
 
 	for (size_t i = 0; i < box.Vertices.size(); i++, k++)
@@ -1969,6 +2030,60 @@ void Renderer::CalculateDeltaTime()
 		mAccumulatedDelta = 0.0;
 		mFps = 0;
 	}
+}
+
+GeometryGenerator::MeshData Renderer::BuildLandGeometry()
+{
+	GeometryGenerator geoGen;
+	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.f, 160.f, 50, 50);
+
+	/*
+		Extract the vertex elements we are interested and apply the height
+		function to each vertex. In addition, color the vertices based on
+		their height so we have sandy looking beaches, grassy low hills,
+		and snow mountain peaks.
+	*/
+
+	std::vector<Vertex> vertices(grid.Vertices.size());
+	for (size_t i = 0; i < grid.Vertices.size(); i++)
+	{
+		DirectX::XMFLOAT3& p = grid.Vertices[i].Position;
+		vertices[i].pos = p;
+		vertices[i].pos.y = GetHillsHeight(p.x, p.z);
+
+		// Color of the vertex based on its height.
+		float y = vertices[i].pos.y;
+		XMFLOAT4& col = vertices[i].color;
+		if (y < -10.f)
+		{
+			// Sandy beach color.
+			col = XMFLOAT4(1.0f, 0.96f, 0.62f, 1.0f);
+		}
+		else if (y < 5.0f)
+		{
+			// Light yellow-green.
+			col = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
+		}
+		else if (y < 12.f)
+		{
+			// Dark yellow-green.
+			col = XMFLOAT4(0.1f, 0.48f, 0.19f, 1.0f);
+		}
+		else if (y < 20.f)
+		{
+			// Dark brown.
+			col = XMFLOAT4(0.45f, 0.39f, 0.34f, 1.0f);
+		}
+		else
+		{
+			// White snow.
+			col = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		}
+		grid.Vertices[i].Position = vertices[i].pos;
+		grid.Vertices[i].Color = vertices[i].color;
+	}
+
+	return grid;
 }
 
 void Renderer::DestroyBuffer(Buffer* buffer) const

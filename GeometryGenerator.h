@@ -12,27 +12,32 @@ public:
 			Position(0.0f, 0.0f, 0.0f),
 			Normal(0.0f, 0.0f, 0.0f),
 			TangentU(0.0f, 0.0f, 0.0f),
-			TexC(0.0f, 0.0f)
+			TexC(0.0f, 0.0f),
+			Color(0.0f, 0.0f, 0.0f, 0.0f)
 		{}
 		Vertex(
 			const DirectX::XMFLOAT3& p, 
 			const DirectX::XMFLOAT3& n, 
 			const DirectX::XMFLOAT3& t, 
-			const DirectX::XMFLOAT2& uv) :
+			const DirectX::XMFLOAT2& uv,
+			const DirectX::XMFLOAT4& c = DirectX::XMFLOAT4(0.0f, 0.0f, 0.0f, 0.0f)) :
 			Position(p),
 			Normal(n),
 			TangentU(t),
-			TexC(uv)
+			TexC(uv),
+			Color(c)
 		{}
 		Vertex(
 			float px, float py, float pz,
 			float nx, float ny, float nz,
 			float tx, float ty, float tz,
-			float u, float v) :
+			float u, float v,
+			float a = 0.0f, float r = 0.0f, float g = 0.0f, float b = 0.0f) :
 			Position(px, py, pz),
 			Normal(nx, ny, nz),
 			TangentU(tx, ty, tz),
-			TexC(u, v) 
+			TexC(u, v),
+			Color(a, r, g, b)
 		{}
 
 		DirectX::XMFLOAT3 Position;

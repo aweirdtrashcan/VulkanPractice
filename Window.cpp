@@ -80,8 +80,11 @@ int Window::ProcessMessages(bool& shouldLeave)
 
 void Window::Render()
 {
-	mRenderer->Update();
-	mRenderer->Draw();
+	if (mCanRender)
+	{
+		mRenderer->Update();
+		mRenderer->Draw();
+	}
 }
 
 LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -109,18 +112,20 @@ LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		// Save the new client area dimensions.
 		mWidth = LOWORD(lParam);
 		mHeight = HIWORD(lParam);
-		mRenderer->StopRender();
+		mCanRender = false;
 		if (wParam == SIZE_MINIMIZED)
 		{
-			mRenderer->StopRender();
+			mCanRender = false;
 		}
 		else if (wParam == SIZE_MAXIMIZED)
 		{
-			mRenderer->NotifyWindowResize();
+			//mRenderer->NotifyWindowResize(mWidth, mHeight);
+			mCanRender = true;
 		}
 		else if (wParam == SIZE_RESTORED)
 		{
-			mRenderer->NotifyWindowResize();
+			//mRenderer->NotifyWindowResize(mWidth, mHeight);
+			mCanRender = true;
 		}
 		//if (md3dDevice)
 		//{
@@ -188,7 +193,8 @@ LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		//mResizing = false;
 		//mTimer.Start();
 		//OnResize();
-		mRenderer->NotifyWindowResize();
+		//mRenderer->NotifyWindowResize(mWidth, mHeight);
+		mCanRender = true;
 		return 0;
 
 		// WM_DESTROY is sent when the window is being destroyed.
@@ -235,12 +241,10 @@ LRESULT __stdcall Window::MainWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		{
 			mRenderer->ToggleVSync();
 		}
-		mRenderer->OnKeyReleased(wParam);
+		mRenderer->OnKeyUp((int)wParam);
 		return 0;
 	case WM_KEYDOWN:
-		mRenderer->OnKeyDown(wParam);
-		return 0;
-
+		mRenderer->OnKeyDown((int)wParam);
 		return 0;
 	}
 

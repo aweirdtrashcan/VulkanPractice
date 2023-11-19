@@ -20,21 +20,19 @@ public:
 	void BuildRenderItems();
 	~Renderer();
 	
-	void StopRender() {};
-	void NotifyWindowResize() {};
+	void NotifyWindowResize(int width, int height);
 	void ToggleVSync() {};
 
 	void Update();
 	void Draw();
 
-	void OnKeyReleased(int key);
+	void OnKeyUp(int key);
 	void OnKeyDown(int key);
 
 	void OnMouseMove(uint64_t wParam, int x, int y);
 
 	void WaitForDeviceIdle()
 	{
-		mCanRender = false;
 		vkDeviceWaitIdle(mDevice);
 	}
 
@@ -76,12 +74,17 @@ private:
 	MeshGeometry CreateMeshGeometry();
 	void UpdateGlobalUniformData(GlobalUniform& globalUniform) const;
 	void CalculateDeltaTime();
+	GeometryGenerator::MeshData BuildLandGeometry();
+	float GetHillsHeight(float x, float z) const
+	{
+		return 0.3f * (z * sinf(0.1f * x) + (x * cosf(0.1f * z)));
+	}
 
 private:
 	static constexpr int shaderCodeMaxSize = 1024 * 10;
 	Timer mTimer;
 
-	bool mCanRender = true;
+	bool mResizing = false;
 
 	double mAccumulatedDelta = 0.0;
 	int mFps = 0;
@@ -93,6 +96,7 @@ private:
 	
 	VkPhysicalDeviceInfo mPhysicalDevice = {};
 	VkDevice mDevice = nullptr;
+	VkDeviceInfo mDeviceInfo;
 	uint32_t mGraphicsQueueIndex = 0;
 	
 	VkQueue mGraphicsQueue = nullptr;
@@ -106,7 +110,8 @@ private:
 	VkFence mMainCopyFence = nullptr;
 	VkSemaphore mMainCopyDoneSemaphore = nullptr;
 
-	uint32_t mImageIndex = 0;
+	uint32_t mNextImageIndex = 0;
+	uint32_t mCurrentImageIndex = 0;
 
 	Image mDepthBuffer{};
 
@@ -136,11 +141,15 @@ private:
 
 	MeshGeometry mMeshGeometry;
 	std::vector<RenderItem> mRenderItems;
-	VkSemaphore mImgAcq = nullptr;
 
 	DirectX::XMVECTOR mEyePosition;
-	DirectX::XMFLOAT2 mLastMousePos{};
+	struct
+	{
+		int x;
+		int y;
+	} mLastMousePos;
 	float mTheta = 0.0f;
 	float mPhi = 0.0f;
 	float mRadius = 10.f;
+	VkFence fence;
 };

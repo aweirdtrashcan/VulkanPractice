@@ -61,5 +61,6 @@ private:
 	__int64 mCurrentTime = 0;
 	__int64 mLastTime = 0;
 	class Renderer* mRenderer = nullptr;
+	bool mCanRender = false;
 };
 

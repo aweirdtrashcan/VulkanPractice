@@ -3,12 +3,6 @@
 #extension GL_EXT_debug_printf : enable
 #extension GL_EXT_spirv_intrinsics : enable
 
-layout(location = 0) in vec3 inPos;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec3 inTangentU;
-layout(location = 3) in vec2 inTexC;
-layout(location = 4) in vec4 inColor;
-
 layout(set = 0, binding = 0) uniform GlobalUniform 
 {
 	mat4 view;
@@ -30,6 +24,12 @@ layout(set = 1, binding = 0) uniform PerObjectUniform
 {
 	mat4 model;
 } perObject;
+
+layout(location = 0) in vec3 inPos;
+layout(location = 1) in vec3 inNormal;
+layout(location = 2) in vec3 inTangentU;
+layout(location = 3) in vec2 inTexC;
+layout(location = 4) in vec4 inColor;
 
 layout(location = 0) out vec4 outColor;
 
