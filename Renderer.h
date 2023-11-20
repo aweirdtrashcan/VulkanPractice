@@ -17,7 +17,6 @@ class Renderer
 {
 public:
 	Renderer(const Window* window);
-	void BuildRenderItems();
 	~Renderer();
 	
 	void NotifyWindowResize(int width, int height);
@@ -74,7 +73,9 @@ private:
 	MeshGeometry CreateMeshGeometry();
 	void UpdateGlobalUniformData(GlobalUniform& globalUniform) const;
 	void CalculateDeltaTime();
-	GeometryGenerator::MeshData BuildLandGeometry();
+	MeshGeometry BuildLandGeometry();
+	void BuildShapesRenderItems();
+	void BuildLandRenderItems();
 	float GetHillsHeight(float x, float z) const
 	{
 		return 0.3f * (z * sinf(0.1f * x) + (x * cosf(0.1f * z)));

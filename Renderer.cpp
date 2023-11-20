@@ -6,6 +6,8 @@
 
 #include <vector>
 #include <iostream>
+#include <fstream>
+#include <string>
 
 using namespace DirectX;
 
@@ -97,9 +99,9 @@ Renderer::Renderer(const Window* window)
 	mGlobalUniformBuffer = CreateGlobalUniformBuffer(mImageCount);
 	BindBuffer(mGlobalUniformBuffer);
 
-	mMeshGeometry = CreateMeshGeometry();
+	mMeshGeometry = BuildLandGeometry();
 
-	BuildRenderItems();
+	BuildLandRenderItems();
 
 	uint64_t renderItemCount = mRenderItems.size();
 
@@ -122,79 +124,6 @@ Renderer::Renderer(const Window* window)
 
 	mPipelineLayout = CreatePipelineLayout();
 	mGraphicsPipeline = CreateVulkanPipeline();
-}
-
-void Renderer::BuildRenderItems()
-{
-	mRenderItems.resize(22);
-	uint32_t uniformBufferIndex = 0;
-	RenderItem box;
-	box.MeshGeo = &mMeshGeometry;
-	box.firstIndex = mMeshGeometry.Geometries["Box"].firstIndex;
-	box.indexCount = mMeshGeometry.Geometries["Box"].indexCount;
-	box.vertexOffset = mMeshGeometry.Geometries["Box"].vertexOffset;
-	box.uniformBufferIndex = uniformBufferIndex++;
-	XMStoreFloat4x4(&box.UniformBuffer.model, XMMatrixTranslation(0.0f, 0.5f, 0.0f));
-	mRenderItems[box.uniformBufferIndex] = box;
-
-	RenderItem grid;
-	grid.firstIndex = mMeshGeometry.Geometries["Grid"].firstIndex;
-	grid.indexCount = mMeshGeometry.Geometries["Grid"].indexCount;
-	grid.vertexOffset = mMeshGeometry.Geometries["Grid"].vertexOffset;
-	grid.MeshGeo = &mMeshGeometry;
-	XMStoreFloat4x4(&grid.UniformBuffer.model, XMMatrixIdentity());
-	grid.uniformBufferIndex = uniformBufferIndex++;
-	mRenderItems[grid.uniformBufferIndex] = grid;
-
-	// Build the columns and the spheres in rows.
-	for (int i = 0; i < 5; i++)
-	{
-		RenderItem leftCylinder;
-		RenderItem rightCylinder;
-		RenderItem leftSphere;
-		RenderItem rightSphere;
-
-		XMMATRIX leftCylinderModel = XMMatrixTranslation(-5.0f, 1.5f, -10.f + i * 5.0f);
-		XMMATRIX rightCylinderModel = XMMatrixTranslation(5.0f, 1.5f, -10.f + i * 5.0f);
-		
-		XMMATRIX leftSphereModel = XMMatrixTranslation(-5.0f, 3.5f, -10.f + i * 5.0f);
-		XMMATRIX rightSphereModel = XMMatrixTranslation(5.0f, 3.5f, -10.f + i * 5.0f);
-
-		XMStoreFloat4x4(&leftCylinder.UniformBuffer.model, leftCylinderModel);
-		XMStoreFloat4x4(&rightCylinder.UniformBuffer.model, rightCylinderModel);
-
-		XMStoreFloat4x4(&leftSphere.UniformBuffer.model, leftSphereModel);
-		XMStoreFloat4x4(&rightSphere.UniformBuffer.model, rightSphereModel);
-
-		leftCylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
-		leftCylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
-		leftCylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
-		leftCylinder.MeshGeo = &mMeshGeometry;
-		leftCylinder.uniformBufferIndex = uniformBufferIndex++;
-
-		rightCylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
-		rightCylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
-		rightCylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
-		rightCylinder.MeshGeo = &mMeshGeometry;
-		rightCylinder.uniformBufferIndex = uniformBufferIndex++;
-
-		leftSphere.firstIndex = mMeshGeometry.Geometries["Sphere"].firstIndex;
-		leftSphere.indexCount = mMeshGeometry.Geometries["Sphere"].indexCount;
-		leftSphere.vertexOffset = mMeshGeometry.Geometries["Sphere"].vertexOffset;
-		leftSphere.MeshGeo = &mMeshGeometry;
-		leftSphere.uniformBufferIndex = uniformBufferIndex++;
-
-		rightSphere.firstIndex = mMeshGeometry.Geometries["Sphere"].firstIndex;
-		rightSphere.indexCount = mMeshGeometry.Geometries["Sphere"].indexCount;
-		rightSphere.vertexOffset = mMeshGeometry.Geometries["Sphere"].vertexOffset;
-		rightSphere.MeshGeo = &mMeshGeometry;
-		rightSphere.uniformBufferIndex = uniformBufferIndex++;
-
-		mRenderItems[leftCylinder.uniformBufferIndex] = leftCylinder;
-		mRenderItems[rightCylinder.uniformBufferIndex] = rightCylinder;
-		mRenderItems[leftSphere.uniformBufferIndex] = leftSphere;
-		mRenderItems[rightSphere.uniformBufferIndex] = rightSphere;
-	}
 }
 
 Renderer::~Renderer()
@@ -446,7 +375,17 @@ void Renderer::Draw()
 	presentInfo.pWaitSemaphores = &imgPrst;
 	presentInfo.pImageIndices = &mNextImageIndex;
 	presentInfo.pResults = 0;
-	VK_CHECK(vkQueuePresentKHR(mGraphicsQueue, &presentInfo));
+
+	VkResult res = vkQueuePresentKHR(mGraphicsQueue, &presentInfo);
+
+	if (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
+	{
+	}
+	else
+	{
+		printf("Present fail\n");
+
+	}
 
 	mCurrentImageIndex = (mCurrentImageIndex + 1) % mImageCount;
 }
@@ -457,7 +396,7 @@ void Renderer::OnKeyUp(int key)
 
 void Renderer::OnKeyDown(int key)
 {
-	float radiusDelta = 500.f * mDeltaTime;
+	float radiusDelta = 2.0f;
 	if (key == 'W')
 		mRadius -= radiusDelta;
 	else if (key == 'S')
@@ -957,7 +896,7 @@ VkSwapchainKHR Renderer::CreateSwapchain(VkSurfaceFormatKHR& out_swapchainSurfac
 
 	}
 
-	createInfo.presentMode = presentMode;
+	createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
 	createInfo.clipped = VK_TRUE;
 	createInfo.oldSwapchain = 0;
 
@@ -1510,7 +1449,7 @@ VkPipeline Renderer::CreateVulkanPipeline() const
 	rsCreateInfo.flags = 0;
 	rsCreateInfo.depthClampEnable = VK_TRUE;
 	rsCreateInfo.rasterizerDiscardEnable = VK_FALSE;
-	rsCreateInfo.polygonMode = VK_POLYGON_MODE_LINE;
+	rsCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
 	rsCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
 	rsCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
 	rsCreateInfo.depthBiasEnable = VK_FALSE;
@@ -1886,7 +1825,7 @@ MeshGeometry Renderer::CreateMeshGeometry()
 
 	GeometryGenerator::MeshData cylinder = geoGen.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
 	GeometryGenerator::MeshData geoSphere = geoGen.CreateSphere(0.5f, 20, 20);
-	GeometryGenerator::MeshData grid = BuildLandGeometry();
+	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.f, 160.f, 50, 50);
 	GeometryGenerator::MeshData box = geoGen.CreateBox(1.5f, 0.5f, 1.5f, 3);
 
 	size_t verticesSize = cylinder.Vertices.size() +
@@ -1986,7 +1925,7 @@ void Renderer::UpdateGlobalUniformData(GlobalUniform& globalUniform) const
 	float height = (float)mWindow->GetWindowHeight();
 	float aspectRatio = width / height;
 	float nearZ = 0.1f;
-	float farZ = 100.f;
+	float farZ = 1000.f;
 	XMMATRIX projection = XMMatrixPerspectiveFovLH(45.f, aspectRatio, nearZ, farZ);
 
 	/* View and Projection Inverse */
@@ -2032,10 +1971,98 @@ void Renderer::CalculateDeltaTime()
 	}
 }
 
-GeometryGenerator::MeshData Renderer::BuildLandGeometry()
+void Renderer::BuildShapesRenderItems()
+{
+	mRenderItems.resize(22);
+	uint32_t uniformBufferIndex = 0;
+	RenderItem box;
+	box.MeshGeo = &mMeshGeometry;
+	box.firstIndex = mMeshGeometry.Geometries["Box"].firstIndex;
+	box.indexCount = mMeshGeometry.Geometries["Box"].indexCount;
+	box.vertexOffset = mMeshGeometry.Geometries["Box"].vertexOffset;
+	box.uniformBufferIndex = uniformBufferIndex++;
+	XMStoreFloat4x4(&box.UniformBuffer.model, XMMatrixTranslation(0.0f, 0.5f, 0.0f));
+	mRenderItems[box.uniformBufferIndex] = box;
+
+	RenderItem grid;
+	grid.firstIndex = mMeshGeometry.Geometries["Grid"].firstIndex;
+	grid.indexCount = mMeshGeometry.Geometries["Grid"].indexCount;
+	grid.vertexOffset = mMeshGeometry.Geometries["Grid"].vertexOffset;
+	grid.MeshGeo = &mMeshGeometry;
+	XMStoreFloat4x4(&grid.UniformBuffer.model, XMMatrixIdentity());
+	grid.uniformBufferIndex = uniformBufferIndex++;
+	mRenderItems[grid.uniformBufferIndex] = grid;
+
+	// Build the columns and the spheres in rows.
+	for (int i = 0; i < 5; i++)
+	{
+		RenderItem leftCylinder;
+		RenderItem rightCylinder;
+		RenderItem leftSphere;
+		RenderItem rightSphere;
+
+		XMMATRIX leftCylinderModel = XMMatrixTranslation(-5.0f, 1.5f, -10.f + i * 5.0f);
+		XMMATRIX rightCylinderModel = XMMatrixTranslation(5.0f, 1.5f, -10.f + i * 5.0f);
+
+		XMMATRIX leftSphereModel = XMMatrixTranslation(-5.0f, 3.5f, -10.f + i * 5.0f);
+		XMMATRIX rightSphereModel = XMMatrixTranslation(5.0f, 3.5f, -10.f + i * 5.0f);
+
+		XMStoreFloat4x4(&leftCylinder.UniformBuffer.model, leftCylinderModel);
+		XMStoreFloat4x4(&rightCylinder.UniformBuffer.model, rightCylinderModel);
+
+		XMStoreFloat4x4(&leftSphere.UniformBuffer.model, leftSphereModel);
+		XMStoreFloat4x4(&rightSphere.UniformBuffer.model, rightSphereModel);
+
+		leftCylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
+		leftCylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
+		leftCylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
+		leftCylinder.MeshGeo = &mMeshGeometry;
+		leftCylinder.uniformBufferIndex = uniformBufferIndex++;
+
+		rightCylinder.firstIndex = mMeshGeometry.Geometries["Cylinder"].firstIndex;
+		rightCylinder.indexCount = mMeshGeometry.Geometries["Cylinder"].indexCount;
+		rightCylinder.vertexOffset = mMeshGeometry.Geometries["Cylinder"].vertexOffset;
+		rightCylinder.MeshGeo = &mMeshGeometry;
+		rightCylinder.uniformBufferIndex = uniformBufferIndex++;
+
+		leftSphere.firstIndex = mMeshGeometry.Geometries["Sphere"].firstIndex;
+		leftSphere.indexCount = mMeshGeometry.Geometries["Sphere"].indexCount;
+		leftSphere.vertexOffset = mMeshGeometry.Geometries["Sphere"].vertexOffset;
+		leftSphere.MeshGeo = &mMeshGeometry;
+		leftSphere.uniformBufferIndex = uniformBufferIndex++;
+
+		rightSphere.firstIndex = mMeshGeometry.Geometries["Sphere"].firstIndex;
+		rightSphere.indexCount = mMeshGeometry.Geometries["Sphere"].indexCount;
+		rightSphere.vertexOffset = mMeshGeometry.Geometries["Sphere"].vertexOffset;
+		rightSphere.MeshGeo = &mMeshGeometry;
+		rightSphere.uniformBufferIndex = uniformBufferIndex++;
+
+		mRenderItems[leftCylinder.uniformBufferIndex] = leftCylinder;
+		mRenderItems[rightCylinder.uniformBufferIndex] = rightCylinder;
+		mRenderItems[leftSphere.uniformBufferIndex] = leftSphere;
+		mRenderItems[rightSphere.uniformBufferIndex] = rightSphere;
+	}
+}
+
+void Renderer::BuildLandRenderItems()
+{
+	mRenderItems.resize(1);
+	uint32_t uniformBufferIndex = 0;
+	RenderItem land;
+	land.MeshGeo = &mMeshGeometry;
+	land.firstIndex = mMeshGeometry.Geometries["Land"].firstIndex;
+	land.indexCount = mMeshGeometry.Geometries["Land"].indexCount;
+	land.vertexOffset = mMeshGeometry.Geometries["Land"].vertexOffset;
+	land.uniformBufferIndex = uniformBufferIndex++;
+	XMStoreFloat4x4(&land.UniformBuffer.model, XMMatrixIdentity());
+	mRenderItems[land.uniformBufferIndex] = land;
+}
+
+MeshGeometry Renderer::BuildLandGeometry()
 {
 	GeometryGenerator geoGen;
 	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.f, 160.f, 50, 50);
+	MeshGeometry meshGeometry;
 
 	/*
 		Extract the vertex elements we are interested and apply the height
@@ -2044,16 +2071,14 @@ GeometryGenerator::MeshData Renderer::BuildLandGeometry()
 		and snow mountain peaks.
 	*/
 
-	std::vector<Vertex> vertices(grid.Vertices.size());
 	for (size_t i = 0; i < grid.Vertices.size(); i++)
 	{
-		DirectX::XMFLOAT3& p = grid.Vertices[i].Position;
-		vertices[i].pos = p;
-		vertices[i].pos.y = GetHillsHeight(p.x, p.z);
+		GeometryGenerator::Vertex& v = grid.Vertices[i];
+		v.Position.y = GetHillsHeight(v.Position.x, v.Position.z);
 
 		// Color of the vertex based on its height.
-		float y = vertices[i].pos.y;
-		XMFLOAT4& col = vertices[i].color;
+		float y = v.Position.y;
+		XMFLOAT4& col = v.Color;
 		if (y < -10.f)
 		{
 			// Sandy beach color.
@@ -2079,11 +2104,35 @@ GeometryGenerator::MeshData Renderer::BuildLandGeometry()
 			// White snow.
 			col = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 		}
-		grid.Vertices[i].Position = vertices[i].pos;
-		grid.Vertices[i].Color = vertices[i].color;
 	}
 
-	return grid;
+	uint64_t vertexBufferSize = sizeof(GeometryGenerator::Vertex) * grid.Vertices.size();
+	meshGeometry.VertexBuffer = CreateBuffer(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, vertexBufferSize, false);
+	BindBuffer(meshGeometry.VertexBuffer);
+
+	Buffer upBuf = CreateUploadBuffer(vertexBufferSize);
+	BindBuffer(upBuf);
+	UploadToBuffer(meshGeometry.VertexBuffer, upBuf, grid.Vertices.data(), upBuf.size);
+	DestroyBuffer(&upBuf);
+
+	uint64_t indexBufferSize = sizeof(uint32_t) * grid.Indices32.size();
+
+	meshGeometry.IndexBuffer = CreateBuffer(VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, indexBufferSize, false);
+	BindBuffer(meshGeometry.IndexBuffer);
+
+	upBuf = CreateUploadBuffer(indexBufferSize);
+	BindBuffer(upBuf);
+	UploadToBuffer(meshGeometry.IndexBuffer, upBuf, grid.Indices32.data(), upBuf.size);
+	DestroyBuffer(&upBuf);
+
+	SubmeshGeometry submesh;
+	submesh.firstIndex = 0;
+	submesh.indexCount = static_cast<uint32_t>(grid.Indices32.size());
+	submesh.vertexOffset = 0;
+
+	meshGeometry.Geometries["Land"] = submesh;
+
+	return meshGeometry;
 }
 
 void Renderer::DestroyBuffer(Buffer* buffer) const
